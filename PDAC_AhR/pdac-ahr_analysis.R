@@ -54,7 +54,7 @@ preAssembleMatrices <- function(dataset, file){
 
 ###############################################
 #### Functions: Pre-assemble counts matrix ####
-mapToPMBC <- function(seu, analysis, spotcheck_clusters=TRUE){
+mapToPMBC <- function(seu, analysis, spotcheck_clusters=FALSE){
   if(analysis == 'sct'){
     seu <- SCTransform(seu, variable.features.n = 2000, verbose = FALSE)
   } else if(analysis == "steps_nonorm") {
@@ -160,7 +160,7 @@ vizGene <- function(seu, gene='AHR', gene_list=c("CD14", "ITGAM", "CD68")){
 ##############
 #### Main ####
 # 1. Convert datasets to Seurat h5 data
-setwd("/cluster/projects/pughlab/projects/cancer_cell_lines/tmp/scrna/pancrea_ahr/datasets")
+setwd("/cluster/projects/mcgahalab/data/mcgahalab/pdac_ahr/datasets")
 if(!file.exists(file.path('PRJCA001063', 'PRJCA001063_CRC_besca2.annotated.h5seurat'))){
   preAssembleMatrices('PRJCA001063', 'PRJCA001063_CRC_besca2.annotated')
 }

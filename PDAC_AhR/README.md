@@ -41,11 +41,11 @@ of comparisons, I am using 10X datasets that are not immune depleted.
   * **Use**: TRUE
 
 ## Related details
-https://satijalab.org/seurat/articles/integration_introduction.html
-https://satijalab.org/seurat/articles/merge_vignette.html
-https://mojaveazure.github.io/seurat-disk/articles/h5Seurat-load.html
-https://satijalab.org/seurat/articles/multimodal_reference_mapping.html
-https://satijalab.org/seurat/articles/integration_large_datasets.html
-https://satijalab.org/seurat/archive/v3.0/conversion_vignette.html
-https://learn.gencore.bio.nyu.edu/single-cell-rnaseq/seurat-part-3-data-normalization/
-https://satijalab.org/seurat/articles/get_started.html
+  * https://satijalab.org/seurat/articles/integration_introduction.html
+  * https://satijalab.org/seurat/articles/merge_vignette.html
+  * https://mojaveazure.github.io/seurat-disk/articles/h5Seurat-load.html
+  * https://satijalab.org/seurat/articles/multimodal_reference_mapping.html
+  * https://satijalab.org/seurat/articles/integration_large_datasets.html
+  * https://satijalab.org/seurat/archive/v3.0/conversion_vignette.html
+  * https://learn.gencore.bio.nyu.edu/single-cell-rnaseq/seurat-part-3-data-normalization/
+  * https://satijalab.org/seurat/articles/get_started.html
