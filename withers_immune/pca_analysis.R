@@ -17,6 +17,8 @@ dir.create(outpath, showWarnings = FALSE, recursive = TRUE)
 dds <- readRDS(file.path(inpath, "all.rds"))
 counts2 <- counts <- rlog(dds, blind=FALSE)
 counts2$condition <- factor(gsub("-.*", "", names(counts$sizeFactor)))  # Relabel groups based on mDC/pDC/Tfh
+grps <- data.frame(names(counts$sizeFactor), counts$condition, counts2$condition)
+colnames(grps) <- c('sample', 'group', 'celltype')
 
 ###########################
 #### Base PCA Analysis ####
@@ -43,6 +45,15 @@ ps <- lapply(outs, function(o){
 ps[[1]]
 ps[[2]]
 
+## Plot PC3 and PC4
+o <- cbind(pca$x, outs[[1]][,-c(1:2)])
+p <-   ggplot(o, aes(x= PC2, y= PC3, color=group, label=name))+
+  geom_point() +
+  geom_text(aes(label=name),hjust=0, vjust=0) +
+  xlim(range(o[,1:2]) + c(-10, 10)) +
+  ylim(range(o[,1:2]) + c(-10, 10))
+p
+
 ## Scree plot
 barplot(percent_var[1:50], ylim=c(0,0.5), ylab="% variance", xlab="PCs", 
         names.arg=paste0("PC", c(1:length(percent_var[1:50]))), las=2, cex.names=0.7)
@@ -52,7 +63,7 @@ dev.off()
 #################################
 #### 95% variance clustering ####
 # Run a simple hierarchical clustering using euclidean distances
-colors <- c("#1b9e77", "#d95f02", "#7570b3")
+colors <- c('#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e')
 hc <- hclust(dist(pca$x[,1:pc_cutoff]))
 dd.row <- as.dendrogram(hc)
 ddata_x <- dendro_data(dd.row)
@@ -61,15 +72,24 @@ ddata_x <- dendro_data(dd.row)
 p2 <- ggplot(segment(ddata_x)) +
   geom_segment(aes(x=x, y=y, xend=xend, yend=yend))
 labs <- label(ddata_x)
-labs$group <- gsub("-.*", "", labs$label)
+labs_ext <- merge(labs, grps, by.x='label', by.y='sample', all=TRUE)
+labs_ext <- labs_ext[match(labs$label, labs_ext$label),]
+
+ps <- lapply(c('group', 'celltype'), function(grp_id){
+  labs$group <- as.character(labs_ext[,grp_id])
+  n <- length(unique(labs$group))
+  p2 + geom_text(data=label(ddata_x),
+                 aes(label=label, x=x, y=0, colour=labs$group),
+                 size=3,hjust=1,nudge_y = -5) +
+    scale_colour_manual(values=colors[1:n]) +
+    coord_flip() + 
+    ylim(-50, 300) +
+    theme_bw()
+})
+
 pdf(file.path(outpath, "hclust.pdf"))
-p2 + geom_text(data=label(ddata_x),
-               aes(label=label, x=x, y=0, colour=labs$group),
-               size=3,hjust=1,nudge_y = -5) +
-  scale_colour_manual(values=c("#1b9e77", "#d95f02", "#7570b3")) +
-  coord_flip() + 
-  ylim(-50, 300) +
-  theme_bw()
+ps[[1]]
+ps[[2]]
 dev.off()
 
 
