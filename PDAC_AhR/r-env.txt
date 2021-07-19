@@ -1,0 +1,4 @@
+ [1] RColorBrewer_1.1-2    infercnv_1.6.0        reshape2_1.4.4       
+ [4] vegan_2.5-7           lattice_0.20-44       permute_0.9-5        
+ [7] gridExtra_2.3         harmony_0.1.0         Rcpp_1.0.6           
+[10] SeuratDisk_0.0.0.9019 SeuratObject_4.0.2    Seurat_4.0.3  
