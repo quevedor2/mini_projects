@@ -63,7 +63,7 @@ cell_markers <- list("NatureCancer_auto"=list(
 )
 
 #############
-#### GSE ####
+#### 2. GSE ####
 ds_idx <- 2
 dataset   <- names(datasets)[ds_idx]
 file      <- datasets[[ds_idx]][1]
@@ -76,7 +76,7 @@ seu$sample.type <- gsub("_[0-9a-zA-Z]*$", "", seu$orig.ident)
 seu <- PercentageFeatureSet(seu, pattern = "^MT-", col.name = "percent.mt")
 
 ####################################
-#### Published Method (Harmony) ####
+#### 3. Published Method (Harmony) ####
 seu <- NormalizeData(object = seu, normalization.method = "LogNormalize", scale.factor = 10000)
 seu <- FindVariableFeatures(object = seu, mean.function = ExpMean, 
                             dispersion.function = LogVMR, nfeatures = 2000)
@@ -124,7 +124,7 @@ seu.harmony <- RunUMAP(object = seu.harmony, dims = 1:PCNum, reduction = "harmon
 SaveH5Seurat(seu.harmony, filename = file.path(dataset, paste0(file, "_harmony.h5seurat")), overwrite = TRUE)
 
 #################################
-#### Load Annotated Clusters ####
+#### 4. Load Annotated Clusters ####
 seu.harmony <- SeuratDisk::LoadH5Seurat(file.path(dataset, paste0(file, "_harmony.h5seurat")))
 
 if(!file.exists(file.path(dataset, paste0(file, "_harmony-markers.rda")))){
@@ -155,7 +155,7 @@ cluster_ids <- setNames(cluster_ids, seq_along(cluster_ids)-1)
 seu.harmony$anno_clusters <- cluster_ids[as.character(seu.harmony$seurat_clusters)]
 
 #########################################
-#### DotPlots and Feature Extraction ####
+#### 5. DotPlots and Feature Extraction ####
 dir.create(file.path(outdir, "features"), recursive = TRUE, showWarnings = FALSE)
 
 # Report the annotation of Harmony clusters
@@ -283,7 +283,7 @@ DotPlot(seu.harmony, features =  names(head(sort(w_comb_sim, decreasing = FALSE)
 dev.off()
 
 ##################
-#### inferCNV ####
+#### 6. inferCNV ####
 
 ## **NOTE**: Refer to tn-matched_infercnv.R for script on running the main infercnv pipeline
 infercnv_outdir <- '/cluster/projects/mcgahalab/data/mcgahalab/pdac_ahr/results/infercnv/matched_pbmc-miniclust'
