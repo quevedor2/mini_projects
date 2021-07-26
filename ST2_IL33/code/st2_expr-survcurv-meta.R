@@ -8,9 +8,10 @@ library(SummarizedExperiment)
 library(gridExtra)
 library(cowplot)
 
-outdir <- '/cluster/projects/mcgahalab/data/mcgahalab/st2_il33/results'
-tcgadir <- '/cluster/projects/mcgahalab/ref/TCGA/data/fpkm/obj'
-clindir <- '/cluster/projects/mcgahalab/ref/TCGA/data/clinical'
+PDIR <- '/cluster/projects/mcgahalab/data/mcgahalab/st2_il33/tcga'
+outdir <- file.path(PDIR, 'results')
+tcgadir <- file.path(PDIR, 'input/data/fpkm/obj')
+clindir <- file.path(PDIR, 'input/data/clinical')
 
 projects <- c("TCGA-BRCA", "TCGA-GBM", "TCGA-OV", "TCGA-LUAD", "TCGA-UCEC",
               "TCGA-KIRC", "TCGA-HNSC", "TCGA-LGG", "TCGA-THCA", "TCGA-LUSC",
