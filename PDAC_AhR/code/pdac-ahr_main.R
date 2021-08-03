@@ -7,6 +7,7 @@ library(vegan)
 library(reshape2)
 library(infercnv)
 library(RColorBrewer)
+library(scales)
 
 ##############################################
 #### 1. Set up environment and parameters ####
@@ -386,9 +387,30 @@ seu.harmony$PGA <- pga_meta
 pga_spl <- split(seu.harmony$PGA, seu.harmony$seurat_clusters_ord)
 cl_cnts <- sapply(split(clusters_anno, clusters_anno$anno),nrow)
 cols <- brewer.pal(n = length(cl_cnts), name = "Set3")
-pdf(file.path(outdir, "features", "pga_boxplots.pdf"), width = 9, height = 4)
-boxplot(pga_spl, ylim=c(0,0.6), las=2, cex.axis=0.6, pch=16, 
-        ylab='PGA', xlab='Clusters', border=rep(cols, cl_cnts))
+pdf(file.path(outdir, "features", "pga_boxplots.pdf"), width = 9, height = 5)
+par(mfrow=c(2,1))
+par(mar=c(0, 4.1, 10.1, 2.1))
+barplot(sapply(pga_spl, length), col=rep(cols, cl_cnts), 
+        xlab='', xaxt='n', ylab='n', las=2, cex.axis=0.6)
+
+par(mar=c(5.1, 4.1, 0.1, 2.1))
+box.x <- boxplot(pga_spl, ylim=c(0,0.6), las=2, cex.axis=0.6, pch=16,
+        ylab='PGA', xlab='Clusters', border="black",
+        col="lightgrey", outline=FALSE)
+
+# +/-1.58 IQR/sqrt(n)
+pga_spl_hiiqr <- lapply(seq_along(pga_spl), function(idx){
+  pga_x <- pga_spl[[idx]]
+  pga_x[which(pga_x > box.x$stats[5,idx])]
+})
+stripchart(pga_spl_hiiqr,              # Data
+           method = "jitter", jitter=0.25,
+           pch = 20,          # Pch symbols
+           border=rep(cols, cl_cnts),
+           col = alpha(rep(cols, cl_cnts), 0.4),           # Color of the symbol
+           xlab='Clusters', ylab='PGA',
+           vertical = TRUE, add=TRUE)
+
 dev.off()
 
 # Feature plots of AhR expression and PGA blended together
