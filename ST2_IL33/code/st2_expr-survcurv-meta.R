@@ -7,6 +7,8 @@ library(DT)
 library(SummarizedExperiment)
 library(gridExtra)
 library(cowplot)
+library(scales)
+library(MASS)
 
 PDIR <- '/cluster/projects/mcgahalab/data/mcgahalab/st2_il33/tcga'
 outdir <- file.path(PDIR, 'results')
@@ -24,7 +26,7 @@ workflow_type <- list("counts"="HTSeq - Counts", "fpkm"="HTSeq - FPKM-UQ")
 
 list.gene <- c('IL1RL1' = 'ENSG00000115602', # IL1RL1
                'PDCD1_1' = "ENSG00000188389", # PDCD1
-               'PDCD1_2' = "ENSG00000276977", # PDCD1
+               #'PDCD1_2' = "ENSG00000276977", # PDCD1
                'CTLA4' = "ENSG00000163599", # CTLA4
                'TOX' = "ENSG00000198846", # TOX
                'KLRG1' = "ENSG00000139187") # KLRG1
@@ -64,6 +66,64 @@ survivals <- lapply(projects, function(proj){
 names(survivals) <- projects
 st2_pvals <- as.data.frame(t(sapply(survivals, function(s) s[list.gene['IL1RL1'],])))
 st2_pvals <- st2_pvals[order(unlist(st2_pvals$pvalue)),]
+
+################################
+#### Co-expression analysis ####
+# Plot IL1RL1 expression against all other marker genes and return correlation + p.value
+coexprs <- lapply(projects, function(proj){
+  # get Log2 FPKM + 1
+  print(paste0(proj, " (", grep(proj, projects), "/", length(projects), ")"))
+  log2exprs <- log2(exprs[[proj]] + 1)
+  
+  dir.create(file.path(outdir, "coexpression"), showWarnings = FALSE)
+  pdf(file.path(outdir, "coexpression", paste0(proj, "_coexpr.pdf")))
+  par(mfrow=c(2,2))
+  
+  k=6
+  my.cols <-  colorRampPalette(c("#f03b20", "#feb24c", "#ffeda0"))(k)
+  
+  st2_expr <- as.numeric(log2exprs[list.gene['IL1RL1'],])  
+  # Compute correlation between IL1RL1 and all other marker genes
+  cors <- sapply(names(list.gene[-grep("IL1RL1", names(list.gene))]), function(gene_y){
+    gene_y_expr <- as.numeric(log2exprs[list.gene[gene_y],])
+    z <- kde2d(st2_expr, gene_y_expr, n=50) # Computer 2D KDE
+    cor <- cor.test(st2_expr, gene_y_expr)
+      
+    # Scatterplot of IL1RL1 to marker gene, overlaid with a contour plot
+    plot(x=st2_expr, y=gene_y_expr, pch=16,
+         col=alpha("black", 0.4), xlab='IL1RL1', ylab=gene_y,
+         main=paste0("cor=", round(cor$estimate, 3), 
+                     "; p=",round(cor$p.value, 3)))
+    contour(z, drawlabels=FALSE, nlevels=k, col=my.cols, add=TRUE)
+    return(c("r"=cor$estimate, "p"=cor$p.value))
+  })
+  dev.off()
+  return(as.data.frame(t(cors)))
+})
+names(coexprs) <- projects
+
+# Separate correlations by marker genes
+cor_genes <- lapply(names(list.gene)[-1], function(geneid){
+  sapply(coexprs, function(i){ i[geneid,] })
+})
+names(cor_genes) <-  names(list.gene)[-1]
+
+# Generate a barplot of all correlations for each cancer type, separated by marker genes
+pdf(file.path(outdir, "coexpression", "cor_ctypes.pdf"))
+par(mfrow=c(5,1))
+sapply(names(cor_genes), function(geneid){
+  par(mar=c(1, 4.1, 2, 2.1))
+  my.cols <-  c("<0.001"="#d73027", "0.001-0.05"="#fc8d59", 
+                "0.05-0.1"="#e0f3f8", "nosnsig"="grey")
+  p_idx <- as.integer(cut(as.numeric(cor_genes[[geneid]]['p',]), 
+                          c(0, 0.001, 0.05, 0.1, 1)))
+  barplot(unlist(cor_genes[[geneid]]['r.cor',]),  col=my.cols[p_idx], xaxt='n',
+          ylim=c(-1,1), las=2, cex.names = 0.6, ylab="cor", main=geneid)
+})
+par(mar=c(10.1, 4.1, 0, 2.1))
+barplot(setNames(rep(0, length(projects)), projects), ylim=c(0,0.1), las=2)
+dev.off()
+  
 
 #########################################
 #### Isolate Expression and Metadata ####
