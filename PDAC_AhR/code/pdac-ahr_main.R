@@ -63,6 +63,15 @@ cell_markers <- list("NatureCancer_auto"=list(
   )
 )
 
+# Compare comparable tables to each other
+compareCountsToOriginal <- function(orig, comp){
+  data.frame("groups"=names(orig),
+             "orig"=as.numeric(orig),
+             "filtered"=as.numeric(comp),
+             "delta"=as.numeric(comp - orig),
+             "pct_delta"=round(as.numeric(comp - orig) / as.numeric(orig), 3))
+}
+
 #############
 #### 2. GSE ####
 ds_idx <- 2
@@ -71,13 +80,61 @@ file      <- datasets[[ds_idx]][1]
 analysis  <- datasets[[ds_idx]][2]
 gene      <- datasets[[ds_idx]][3]
 
+###################################
+#### 2a. Create Seurat object  ####
+PDIR <- '/cluster/projects/mcgahalab/data/mcgahalab/pdac_ahr/datasets/GSE155698/raw_data'
+samples <- list.files(PDIR, pattern="TISSUE|PBMC")
+setwd(PDIR)
+
+seus <- lapply(samples, function(s){
+  mtx <- Read10X(data.dir = file.path(s, "filtered_feature_bc_matrix"), strip.suffix=TRUE)
+  seu <- CreateSeuratObject(counts = mtx, project = s)
+})
+
+seu <- merge(seus[[1]], y = seus[-1], 
+             add.cell.ids = samples, 
+             project = dataset)
+SeuratDisk::SaveH5Seurat(seu, filename = file.path(dataset, paste0(file, ".h5seurat")))
+
+
+#####################################
+#### 2b. Load raw Seurat object  ####
 ## Load data and use reference PBMC to map PBMC labels
 seu <- SeuratDisk::LoadH5Seurat(file.path(dataset, paste0(file, ".h5seurat")))
 seu$sample.type <- gsub("_[0-9a-zA-Z]*$", "", seu$orig.ident)
+seu$group.ident <- gsub("_[a-zA-Z0-9]+$", "", seu$orig.ident)
 seu <- PercentageFeatureSet(seu, pattern = "^MT-", col.name = "percent.mt")
 
-####################################
-#### 3. Published Method (Harmony) ####
+group_cells_orig <- table(seu$group.ident)
+sample_cells_orig <- table(seu$orig.ident)
+
+###################################
+#### 3a. QC of the cell counts ####
+dir.create(file.path(outdir, "qc"), showWarnings = FALSE)
+pdf(file.path(outdir, "qc", "qc_metrics.pdf"), width = 16)
+Idents(seu) <- seu$group.ident
+mt_by_cnt   <- FeatureScatter(seu, feature1 = "nCount_RNA", feature2 = "percent.mt", shuffle=TRUE)
+feat_by_cnt <- FeatureScatter(seu, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", shuffle=TRUE)
+mt_by_cnt + feat_by_cnt
+dev.off()
+
+# Remove outliers
+seu <- subset(seu, subset = nFeature_RNA > quantile(seu$nCount_RNA, 0.05) & 
+                 nFeature_RNA < quantile(seu$nFeature_RNA, 0.95) & 
+                 percent.mt < 10)
+# 95th nCount_RNA = 4836
+# 5th nFeature_RNA = 581
+# 10 percent.mt = 85th percentile
+
+write.table(x=compareCountsToOriginal(group_cells_orig, table(seu$group.ident)), 
+            file=file.path(outdir, "qc", "group_cnts.tsv"), sep="\t", col.names = TRUE,
+            row.names = FALSE, quote = FALSE)
+write.table(x=compareCountsToOriginal(sample_cells_orig, table(seu$orig.ident)), 
+            file=file.path(outdir, "qc", "sample_cnts.tsv"), sep="\t", col.names = TRUE,
+            row.names = FALSE, quote = FALSE)
+
+#######################################
+#### 3b. Published Method (Harmony) ####
 seu <- NormalizeData(object = seu, normalization.method = "LogNormalize", scale.factor = 10000)
 seu <- FindVariableFeatures(object = seu, mean.function = ExpMean, 
                             dispersion.function = LogVMR, nfeatures = 2000)
@@ -112,7 +169,7 @@ seu <- FindClusters(seu, resolution = 1.2)
 seu <- RunUMAP(seu, reduction = "pca", dims = 1:PCNum)
 
 ## Find Neighbours and Cluster with HARMONY
-pdf(file.path(outdir, "harmony_convergence.pdf"))
+pdf(file.path(outdir, "harmony_convergence2.pdf"))
 seu <- seu %>% 
   RunHarmony("orig.ident", plot_convergence = TRUE)
 dev.off()
@@ -122,18 +179,24 @@ seu.harmony <- FindClusters(object = seu, resolution = 1.2, reduction ="harmony"
 # Tweaked the UMAP parameters here
 seu.harmony <- RunUMAP(object = seu.harmony, dims = 1:PCNum, reduction = "harmony",
                        n.neighbors = 10L, n.components = 2L, n.epochs=400L, min.dist=0.1)
-SaveH5Seurat(seu.harmony, filename = file.path(dataset, paste0(file, "_harmony.h5seurat")), overwrite = TRUE)
+SaveH5Seurat(seu.harmony, filename = file.path(dataset, paste0(file, "_harmony2.h5seurat")), overwrite = TRUE)
 
 #################################
 #### 4. Load Annotated Clusters ####
-seu.harmony <- SeuratDisk::LoadH5Seurat(file.path(dataset, paste0(file, "_harmony.h5seurat")))
+harmony_file <- 'harmony2' # harmony or harmony2
+seu.harmony <- SeuratDisk::LoadH5Seurat(file.path(dataset, paste0(file, "_", harmony_file, ".h5seurat")))
 
-if(!file.exists(file.path(dataset, paste0(file, "_harmony-markers.rda")))){
+if(!file.exists(file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))){
+  # lapply(names(table(seu.harmony$seurat_clusters)), function(cluster_idx){
+  #   cluster.markers <- FindMarkers(seu.harmony, ident.1 = cluster_idx,
+  #                                  min.pct = 0.25, thresh.use = 0.25)
+  # })
+  Idents(seu.harmony) <- seu.harmony$seurat_clusters
   seu.harmony.markers <- FindAllMarkers(object = seu.harmony, only.pos = TRUE, min.pct = 0.25, 
                                         thresh.use = 0.25)
-  seu.harmony.markers %>% group_by(cluster) %>% top_n(2, avg_logFC)
+  # seu.harmony.markers %>% group_by(cluster) %>% top_n(2, avg_logFC)
   save(seu.harmony.markers, AutomatedClusterMarkerTable, 
-       file=file.path(dataset, paste0(file, "_harmony-markers.rda")))
+       file=file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))
   
 } else {
   print("Reading harmony markers")
@@ -157,7 +220,8 @@ seu.harmony$anno_clusters <- cluster_ids[as.character(seu.harmony$seurat_cluster
 
 #########################################
 #### 5. DotPlots and Feature Extraction ####
-dir.create(file.path(outdir, "features"), recursive = TRUE, showWarnings = FALSE)
+outdir_plus <- file.path(outdir, "features2")
+dir.create(file.path(outdir_plus), recursive = TRUE, showWarnings = FALSE)
 
 # Report the annotation of Harmony clusters
 clusters <- data.frame('harmony'=seu.harmony$seurat_clusters,
@@ -186,7 +250,7 @@ seu.harmony$seurat_clusters_ord <- setNames(ord, names(Idents(seu.harmony)))
 
 # Dotplots showing the mean expression + percent-expressed-in-cluster for marker genes
 # Harmony Clusters
-pdf(file.path(outdir, "features", "nc-dotplot_clusters.pdf"), width=15, height = 12)
+pdf(file.path(outdir_plus, "nc-dotplot_clusters.pdf"), width=15, height = 12)
 Idents(seu.harmony) <- seu.harmony$seurat_clusters_ord
 DotPlot(seu.harmony, features = sorted_markers, # unique(unlist(natcan_markers)),
         cols = c('grey', 'darkred'), dot.scale = 10) + 
@@ -195,7 +259,7 @@ dev.off()
 
 # Dotplots showing the mean expression + percent-expressed-in-cluster for marker genes
 # Annotated clusters
-pdf(file.path(outdir, "features", "nc-dotplot_anno.pdf"), width=15, height = 12)
+pdf(file.path(outdir_plus, "nc-dotplot_anno.pdf"), width=15, height = 12)
 Idents(seu.harmony) <- seu.harmony$anno_clusters
 DotPlot(seu.harmony, features = sorted_markers, # unique(unlist(natcan_markers)),
         cols = c('grey', 'darkred'), dot.scale = 10) + 
@@ -203,16 +267,16 @@ DotPlot(seu.harmony, features = sorted_markers, # unique(unlist(natcan_markers))
 dev.off()
 
 # Umap visualization, separated by clusters
-pdf(file.path(outdir, "features", "nc-dimplot_clusters.pdf"), width=17)
-p1 <- DimPlot(object = seu.harmony2, reduction = "umap", group.by='seurat_clusters', 
+pdf(file.path(outdir_plus, "nc-dimplot_clusters.pdf"), width=17)
+p1 <- DimPlot(object = seu.harmony, reduction = "umap", group.by='seurat_clusters', 
               label = TRUE, pt.size = 0.5)
-p2 <- DimPlot(object = seu.harmony2, reduction = "umap", group.by='anno_clusters', 
+p2 <- DimPlot(object = seu.harmony, reduction = "umap", group.by='anno_clusters', 
               label = TRUE, pt.size = 0.5)
 p1 + p2
 dev.off()
 
 # Feature plots of the sorted Marker Genes
-pdf(file.path(outdir, "features", "nc-featplots.pdf"), height=14, width=14)
+pdf(file.path(outdir_plus, "nc-featplots.pdf"), height=14, width=14)
 FeaturePlot(seu.harmony, features = sorted_markers, pt.size = 0.5, ncol = 4,
             cols=c("#f7f4f9", "#91003f"), order=TRUE, keep.scale=NULL, label=FALSE)
 dev.off()
@@ -245,7 +309,7 @@ sim_df    <- data.frame("gene"=names(comb_sim),
                         "dist_mean_expr"=expr_sim, 
                         "dist_percent_expr"=pct_sim, 
                         "dist_combined"=comb_sim)[ord_idx,]
-write.table(sim_df, file = file.path(outdir, "features", "ahr_dist.tsv"), 
+write.table(sim_df, file = file.path(outdir_plus, "ahr_dist.tsv"), 
             sep="\t", quote=FALSE, row.names = FALSE, col.names = TRUE)
 
 # Calculate a weighted distance between genes similar to AhR
@@ -264,19 +328,19 @@ write.table(w_sim_df, file = file.path(outdir, "features", "weighted_ahr_dist.ts
             sep="\t", quote=FALSE, row.names = FALSE, col.names = TRUE)
 
 # Plot the top 25 most similar features to AHR
-pdf(file.path(outdir, "features", "nc-featplots_top25.pdf"), height=15, width=15)
+pdf(file.path(outdir_plus, "nc-featplots_top25.pdf"), height=15, width=15)
 FeaturePlot(seu.harmony, features = names(head(sort(w_comb_sim, decreasing = FALSE), 25)), 
             pt.size = 0.5, ncol = 5, cols=c("#f7f4f9", "#91003f"), order=TRUE, 
             keep.scale='all', label=FALSE)
 dev.off()
 
-pdf(file.path(outdir, "features", "nc-featplots_top25.pdf"), height=15, width=15)
+pdf(file.path(outdir_plus, "nc-featplots_top25.pdf"), height=15, width=15)
 FeaturePlot(seu.harmony, features = names(head(sort(w_comb_sim, decreasing = FALSE), 25)), 
             pt.size = 0.5, ncol = 5, cols=c("#f7f4f9", "#91003f"), order=TRUE, 
             keep.scale='all', label=FALSE)
 dev.off()
 
-pdf(file.path(outdir, "features", "nc-dotplot_top25.pdf"), height=15, width=20)
+pdf(file.path(outdir_plus, "nc-dotplot_top25.pdf"), height=15, width=20)
 Idents(seu.harmony) <- seu.harmony$seurat_clusters_ord
 DotPlot(seu.harmony, features =  names(head(sort(w_comb_sim, decreasing = FALSE), 25)), # unique(unlist(natcan_markers)),
         cols = c('grey', 'darkred'), dot.scale = 10) + 
@@ -427,3 +491,8 @@ DotPlot(seu.harmony, features = c('AHR', 'PGA'), # unique(unlist(natcan_markers)
         cols = c('grey', 'darkred'), dot.scale = 10) + 
   RotatedAxis() + FontSize(x.text = 17, y.text = 17)
 dev.off()
+
+
+x <- table(seu.harmony$orig.ident)
+ids <- unique(gsub("_[a-zA-Z0-9]+$", "", names(x)))
+sapply(ids, function(id) sum(x[grep(id, names(x))]))
