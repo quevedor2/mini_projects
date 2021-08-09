@@ -75,7 +75,7 @@ compareCountsToOriginal <- function(orig, comp){
              "pct_delta"=round(as.numeric(comp - orig) / as.numeric(orig), 3))
 }
 
-#############
+################
 #### 2. GSE ####
 ds_idx <- 2
 dataset   <- names(datasets)[ds_idx]
@@ -185,10 +185,13 @@ seu.harmony <- RunUMAP(object = seu.harmony, dims = 1:PCNum, reduction = "harmon
 SaveH5Seurat(seu.harmony, filename = file.path(dataset, paste0(file, "_harmony2.h5seurat")), overwrite = TRUE)
 
 #################################
-#### 4. Load Annotated Clusters ####
+#### 4a. Load in Seurat data ####
 harmony_file <- 'harmony2' # harmony or harmony2
 seu.harmony <- SeuratDisk::LoadH5Seurat(file.path(dataset, paste0(file, "_", harmony_file, ".h5seurat")))
 
+####################################
+#### 4b. Load Annotated Clusters ####
+harmony_file <- 'harmony2' # harmony or harmony2
 if(!file.exists(file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))){
   Idents(seu.harmony) <- seu.harmony$seurat_clusters
   seu.harmony.markers <- FindAllMarkers(object = seu.harmony, only.pos = TRUE, min.pct = 0.25, 
@@ -200,19 +203,12 @@ if(!file.exists(file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda
        file=file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))
   
 } else {
-  #load(file=file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))
-  # x <- lapply(seq_along(seu.harmony.markers), function(idx){
-  #   seu.harmony.markers[[idx]]$cluster <- as.character(idx - 1)
-  #   seu.harmony.markers[[idx]]$gene <- rownames(seu.harmony.markers[[idx]])
-  #   seu.harmony.markers[[idx]]
-  # })
-  # seu.harmony.markers <- do.call(rbind, x)
-  # colnames(seu.harmony.markers)[2] <- 'avg_logFC'
-  
   print("Reading harmony markers")
   load(file=file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))
 }
 
+###########################################
+#### 4c. Annotate the harmony clusters ####
 # Annotate the cell types for each cluster
 # This function is found in AutomatedClusterMarkerTable.R
 Idents(seu.harmony) <- seu.harmony$seurat_clusters
@@ -247,6 +243,55 @@ if(annotation_method=='natcan'){
   cluster_ids <- setNames(df$sortedID, df$V1)
 }
 
+#################################################
+#### 4d. Refine automatic cluster annotation ####
+if(annotation_method=='scsa' & file.exists(file.path(outdir_plus, 'annotate.txt'))){
+  if(!file.exists(file.path(outdir_plus, "seurat_markers.manual.csv"))){
+    # WARNING: This sections is heavily manually curated, as such, there are hardcoded segments
+    # manually annotate some clusters after inspecting UMAP and SCSA annotations
+    manual_ids <- setNames(c(1,3,2,1,3,1,2,14,2,3,3,2,3,14,7,15,7,7,
+                             14,10,14,12,14,6,14,7,14,8,8,8,11,1,16,
+                             14,8,5,3,13,1,4), df$V1)
+    seu.harmony$manual_clusters <- manual_ids[as.character(seu.harmony$seurat_clusters)]
+    
+    # Find differential markers between clusters that I was unable to disambiguate between
+    Idents(seu.harmony) <- seu.harmony$manual_clusters
+    grp_comp <- list("monocytes-macrophage-neutrophil"=c('14', '1'),
+                     'nk-tcell'=c('2', '3'),
+                     'plasma-bcell'=c('4', '15'),
+                     'b-plasma_b-plasma'=c('4', '12'),
+                     'b-plasma_bcell'=c('12', '15'))
+    grp_markers <- lapply(grp_comp, function(grps){
+      print(grps)
+      markers <- FindMarkers(object = seu.harmony, only.pos = TRUE, min.pct = 0.25, 
+                             thresh.use = 0.25, ident.1 = grps[1], ident.2 = grps[2])
+      return(markers)
+    })
+    
+    # Reduce the list to a dataframe and format for SCSA input
+    g_ids <- sapply(grp_comp, paste, collapse="_")
+    for (idx in seq_along(grp_comp)) {
+      grp_markers[[idx]]$cluster <- g_ids[idx]
+      grp_markers[[idx]]$gene <- rownames(grp_markers[[idx]])
+      colnames(grp_markers[[idx]])[2] <- 'avg_logFC'
+    }
+    grpmark <- do.call(rbind, grp_markers)
+    write.table(grpmark, file=file.path(outdir_plus, "seurat_markers.manual.csv"), 
+                sep=",", col.names = TRUE, row.names=FALSE, quote = FALSE)
+  }
+  
+  ## After running SCSA on the updated seurat markers and referencing the Naturecancer Paper
+  cluster_ids <- setNames(c(
+    "Neutrophil", "T-Cell", "Natural killer cell", "Neutrophil", "T-Cell", "Neutrophil", 
+    "Natural killer cell", "Macrophage", "Natural killer cell", "T-Cell", "T-Cell", 
+    "T-Cell", "T-Cell", "Macrophage", "Epithelial cell", "B-cell", "Epithelial cell", 
+    "Epithelial cell", "Macrophage", "Mast cell", "Macrophage", "Plasma cell", 
+    "Macrophage", "Acinar cell", "Macrophage", "Epithelial cell", "Dendritic cells", 
+    "Mesenchymal stem cell", "Mesenchymal stem cell", "Mesenchymal stem cell", 
+    "NK T-cell", "Neutrophil", "Endothelial cell", "Macrophage", "Mesenchymal stem cell", 
+    "Plasmacytoid dendritic cell", "Natural killer cell", "Megakaryocyte", "Neutrophil", 
+    "Hematopoietic stem cell"), df$V1)
+}
 
 # Add the annotated cell types to Seurat metadata
 seu.harmony$anno_clusters <- cluster_ids[as.character(seu.harmony$seurat_clusters)]
@@ -294,17 +339,19 @@ dev.off()
 # Dotplots showing the mean expression + percent-expressed-in-cluster for marker genes
 # Annotated clusters
 pdf(file.path(outdir_plus, "nc-dotplot_anno.pdf"), width=15, height = 12)
-Idents(seu.harmony) <- seu.harmony$anno_clusters
+anno_ord <- levels(factor(seu.harmony$anno_clusters))
+Idents(seu.harmony) <- factor(seu.harmony$anno_clusters, levels=anno_ord)
 DotPlot(seu.harmony, features = sorted_markers, # unique(unlist(natcan_markers)),
         cols = c('grey', 'darkred'), dot.scale = 10) + 
   RotatedAxis() + FontSize(x.text = 17, y.text = 17)
 dev.off()
 
 # Annotated clusters, separated by tissue type
+anno_ord <- levels(factor(seu.harmony$anno_clusters))
 ps <- lapply(unique(seu.harmony$group.ident), function(ident){
   Idents(seu.harmony) <- seu.harmony$group.ident
   sub.seu <- subset(x=seu.harmony, idents=ident)
-  Idents(sub.seu) <- sub.seu$anno_clusters
+  Idents(sub.seu) <- factor(sub.seu$anno_clusters, levels=anno_ord)
   
   DotPlot(sub.seu, features = sorted_markers, # unique(unlist(natcan_markers)),
           cols = c('grey', 'darkred'), dot.scale = 10) + 
@@ -319,6 +366,9 @@ ps[['PDAC_TISSUE']]
 dev.off()
 Idents(seu.harmony) <- seu.harmony$anno_clusters
 
+
+## Annotated clusters, test for differentials between tissue types
+anno_ord <- levels(factor(seu.harmony$anno_clusters))
 group_exps <- lapply(unique(seu.harmony$group.ident), function(ident){
   print(ident)
   Idents(seu.harmony) <- seu.harmony$group.ident
@@ -328,21 +378,22 @@ group_exps <- lapply(unique(seu.harmony$group.ident), function(ident){
     Idents(sub.seu) <- sub.seu$orig.ident
     sub.uid.seu <- subset(x=sub.seu, idents=uid)
     
-    Idents(sub.uid.seu) <- sub.uid.seu$anno_clusters
+    Idents(sub.uid.seu) <- factor(sub.uid.seu$anno_clusters, levels=anno_ord)
     dat <- DotPlot(sub.uid.seu, features = sorted_markers)$data[,c(1:4)]
     dat$UID <- paste0(dat[,3], "_", dat[,4])
     return(dat)
   })
   
-  avg_exp <- Reduce(function(x,y) merge(x,y, by=c('UID')), 
+  avg_exp <- Reduce(function(x,y) merge(x,y, by=c('UID'), all=TRUE), 
                     lapply(uid_dots, function(i) i[,c('avg.exp', 'UID')]))
-  pct_exp <- Reduce(function(x,y) merge(x,y, by=c('UID')), 
+  pct_exp <- Reduce(function(x,y) merge(x,y, by=c('UID'), all=TRUE), 
                     lapply(uid_dots, function(i) i[,c('pct.exp', 'UID')]))
   
   return(list("exp"=avg_exp,"pct"=pct_exp))
 })
 names(group_exps) <- unique(seu.harmony$group.ident)
 
+# Set up order of UIDs (e.g. gene_Celltype)
 common_uid <- unique(sort(unlist(sapply(group_exps, function(i) i[[1]]$UID))))
 uid_df <- data.frame("UID"=common_uid)
 t_ret <- 'stat'
@@ -353,6 +404,7 @@ grp_delta <- lapply(setNames(c("exp", "pct"), c("exp", "pct")), function(grp){
   lapply(group_exps, function(groupa){
     ga <- groupa[[grp]]
     ga <- merge(uid_df, ga, by='UID', all.x=TRUE)
+    # Compare groupA to groupB using a t-test
     sapply(group_exps, function(groupb){
       gb <- groupb[[grp]]
       gb <- merge(uid_df, gb, by='UID', all.x=TRUE)
@@ -367,6 +419,42 @@ grp_delta <- lapply(setNames(c("exp", "pct"), c("exp", "pct")), function(grp){
   })
 })
 
+# Isolate deltas by AHR
+ahr_delta <- lapply(grp_delta, function(exp_pct){
+  df <- as.data.frame(exp_pct$PDAC_TISSUE)
+  dfspl <- split(df, f=factor(gsub("_.*", "", rownames(df))))
+  df <- dfspl$AHR # $PDAC_TISSUE
+  df$celltype <- gsub("^.*_", "", rownames(df))
+  return(df)
+})
+
+ahr_ggpt <- lapply(setNames(names(grp_delta[[1]]), names(grp_delta[[1]])), function(tissue){
+  colids <- c('celltype', tissue)
+  merged_ahr <- merge(ahr_delta[[1]][, colids], ahr_delta[[2]][, colids], 
+                      by='celltype', all=TRUE)
+  colnames(merged_ahr)[-1] <- names(grp_delta)
+  merged_ahr <- merged_ahr[match(merged_ahr$celltype, anno_ord),]
+  merged_ahr$tissue <- tissue
+  merged_ahr
+})
+
+## ggplot wizardry
+merged_ahr <- do.call(rbind, ahr_ggpt[c(1:3)])
+p<-ggplot(data=merged_ahr, aes(x=celltype, y=exp, fill=pct)) +
+  labs(x='Cell type', y='Mean expression (delta)', title=tissue) +
+  geom_bar(stat="identity") +
+  ylim(-8,8) +
+  theme_minimal() + 
+  scale_fill_gradient2(low='#2166ac', mid='#e0e0e0', high='#b2182b', 
+                       space='Lab', midpoint=0) +
+  coord_flip() + 
+  facet_grid(cols = vars(tissue))
+pdf(file.path(outdir_plus, "nc-dotplot_delta.pdf"))
+p
+dev.off()
+
+write.table(merged_ahr, file=file.path(outdir_plus, "nc-dotplot_delta.tsv"),
+            sep="\t", col.names=TRUE, row.names=FALSE, quote=FALSE)
 
 
 Idents(seu.harmony) <- seu.harmony$anno_clusters
