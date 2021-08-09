@@ -14,6 +14,8 @@ library(scales)
 PDIR <- "/cluster/projects/mcgahalab/data/mcgahalab/pdac_ahr"
 setwd(file.path(PDIR, "datasets"))
 outdir <- file.path(PDIR, "results")
+outdir_plus <- file.path(outdir, "features2")
+annotation_method <- 'scsa' # natcan or scsa
 
 datasets <- list('PRJCA001063'=c('PRJCA001063_CRC_besca2.annotated', 
                                  'steps_nonorm',
@@ -24,6 +26,7 @@ datasets <- list('PRJCA001063'=c('PRJCA001063_CRC_besca2.annotated',
 
 # Genes of interest (Myeloid)
 goi <- c("CD14", "ITGAM", "CD68", "MARCO", "FCGR3B", "CD163", "SIGLEC1", "SIRPA", "FCGR3A")
+# goi <- c("CD14", "CD163", "MARCO", "SIGLEC1", "FCGR3A", "FCGR3B", "TNFSF15", "TREM1", "IL10", "IRF8", "RAET1E")
 gene <- 'AHR'
 markers <- c(gene, goi)
 
@@ -187,40 +190,69 @@ harmony_file <- 'harmony2' # harmony or harmony2
 seu.harmony <- SeuratDisk::LoadH5Seurat(file.path(dataset, paste0(file, "_", harmony_file, ".h5seurat")))
 
 if(!file.exists(file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))){
-  # lapply(names(table(seu.harmony$seurat_clusters)), function(cluster_idx){
-  #   cluster.markers <- FindMarkers(seu.harmony, ident.1 = cluster_idx,
-  #                                  min.pct = 0.25, thresh.use = 0.25)
-  # })
   Idents(seu.harmony) <- seu.harmony$seurat_clusters
   seu.harmony.markers <- FindAllMarkers(object = seu.harmony, only.pos = TRUE, min.pct = 0.25, 
                                         thresh.use = 0.25)
   # seu.harmony.markers %>% group_by(cluster) %>% top_n(2, avg_logFC)
-  save(seu.harmony.markers, AutomatedClusterMarkerTable, 
+  write.table(seu.harmony.markers, file=file.path(outdir_plus, "seurat_markers.csv"),
+              sep=",", quote=FALSE, row.names=FALSE, col.names=TRUE)
+  save(seu.harmony.markers, AutomatedClusterMarkerTable, assignClusterId,
        file=file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))
   
 } else {
+  #load(file=file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))
+  # x <- lapply(seq_along(seu.harmony.markers), function(idx){
+  #   seu.harmony.markers[[idx]]$cluster <- as.character(idx - 1)
+  #   seu.harmony.markers[[idx]]$gene <- rownames(seu.harmony.markers[[idx]])
+  #   seu.harmony.markers[[idx]]
+  # })
+  # seu.harmony.markers <- do.call(rbind, x)
+  # colnames(seu.harmony.markers)[2] <- 'avg_logFC'
+  
   print("Reading harmony markers")
-  load(file.path(dataset, paste0(file, "_harmony-markers.rda"))) 
+  load(file=file.path(dataset, paste0(file, "_", harmony_file, "-markers.rda")))
 }
 
 # Annotate the cell types for each cluster
 # This function is found in AutomatedClusterMarkerTable.R
 Idents(seu.harmony) <- seu.harmony$seurat_clusters
-seu_anno <- AutomatedClusterMarkerTable(Seurat_Object=seu.harmony, 
-                                        ClusterList=split(seu.harmony.markers, seu.harmony.markers$cluster),
-                                        cell_markers=cell_markers[['NatureCancer_auto']])
-genes <- rownames(GetAssayData(seu.harmony))
+if(annotation_method=='natcan'){
+  anno <- lapply(setNames(names(cell_markers), names(cell_markers)), function(cm){
+    seu_anno <- AutomatedClusterMarkerTable(Seurat_Object=seu.harmony, 
+                                            ClusterList=split(seu.harmony.markers, seu.harmony.markers$cluster),
+                                            cell_markers=cell_markers[[cm]],
+                                            exact.match=TRUE, cyc=FALSE, rp=FALSE)
+    seu_anno[[2]]
+  })
+  anno <- do.call(cbind, anno)
+  anno[grep("^[0-9]+$", anno)] <- NA
+  seu_anno <- apply(anno[,c('NatureCancer_manual', 'NatureCancer_auto', 'CellResearch')], 1, function(i) unique(na.omit(i))[1])
+  seu_anno[which(is.na(seu_anno))] <- '1234'
+  
+  cluster_ids <- seu_anno # seu_anno[[2]]
+  unk_idx <- grep("^.*[0-9]+$", cluster_ids)
+  cluster_ids[unk_idx] <- 'Unknown'
+  cluster_ids <- setNames(cluster_ids, seq_along(cluster_ids)-1)
+} else if(annotation_method=='scsa' & file.exists(file.path(outdir_plus, 'annotate.txt'))){
+  cluster_keep <- length(table(seu.harmony.markers$cluster))
+  nL <- R.utils::countLines(file.path(outdir_plus, 'annotate.txt'))
+  df <- read.csv(file.path(outdir_plus, 'annotate.txt'), header=FALSE, skip=nL-cluster_keep,
+                 check.names = FALSE, stringsAsFactors = FALSE)
+  
+  df$V1 <-  gsub("\\[", "", df$V1)
+  for (coli in seq_along(df)) {
+    df[,coli] <- gsub("\\'", "", df[,coli])
+  }
+  df$sortedID <- sapply(strsplit(df$V3, split="\\|"), function(i) paste(sort(gsub("^ ", "", i)), collapse="/"))
+  cluster_ids <- setNames(df$sortedID, df$V1)
+}
+
 
 # Add the annotated cell types to Seurat metadata
-cluster_ids <- seu_anno[[2]]
-unk_idx <- grep("^.*[0-9]+$", cluster_ids)
-cluster_ids[unk_idx] <- 'Unknown'
-cluster_ids <- setNames(cluster_ids, seq_along(cluster_ids)-1)
 seu.harmony$anno_clusters <- cluster_ids[as.character(seu.harmony$seurat_clusters)]
 
-#########################################
-#### 5. DotPlots and Feature Extraction ####
-outdir_plus <- file.path(outdir, "features2")
+######################################
+#### 5.a Feature ordering and prep ####
 dir.create(file.path(outdir_plus), recursive = TRUE, showWarnings = FALSE)
 
 # Report the annotation of Harmony clusters
@@ -248,6 +280,8 @@ sorted_markers <- names(sort(geomcor[,'AHR'], decreasing = TRUE))
 ord <- factor(as.character(Idents(seu.harmony)), levels=as.character(clusters_anno$harmony))
 seu.harmony$seurat_clusters_ord <- setNames(ord, names(Idents(seu.harmony)))
 
+######################
+#### 5.b Dotplots ####
 # Dotplots showing the mean expression + percent-expressed-in-cluster for marker genes
 # Harmony Clusters
 pdf(file.path(outdir_plus, "nc-dotplot_clusters.pdf"), width=15, height = 12)
@@ -266,6 +300,80 @@ DotPlot(seu.harmony, features = sorted_markers, # unique(unlist(natcan_markers))
   RotatedAxis() + FontSize(x.text = 17, y.text = 17)
 dev.off()
 
+# Annotated clusters, separated by tissue type
+ps <- lapply(unique(seu.harmony$group.ident), function(ident){
+  Idents(seu.harmony) <- seu.harmony$group.ident
+  sub.seu <- subset(x=seu.harmony, idents=ident)
+  Idents(sub.seu) <- sub.seu$anno_clusters
+  
+  DotPlot(sub.seu, features = sorted_markers, # unique(unlist(natcan_markers)),
+          cols = c('grey', 'darkred'), dot.scale = 10) + 
+    RotatedAxis() + FontSize(x.text = 17, y.text = 17)
+})
+names(ps) <- unique(seu.harmony$group.ident)
+pdf(file.path(outdir_plus, "nc-dotplot_anno-groups.pdf"), width=15, height=12)
+ps[['AdjNorm_TISSUE']]
+ps[['Healthy_PBMC']]
+ps[['PDAC_PBMC']]
+ps[['PDAC_TISSUE']]
+dev.off()
+Idents(seu.harmony) <- seu.harmony$anno_clusters
+
+group_exps <- lapply(unique(seu.harmony$group.ident), function(ident){
+  print(ident)
+  Idents(seu.harmony) <- seu.harmony$group.ident
+  sub.seu <- subset(x=seu.harmony, idents=ident)
+  
+  uid_dots <- lapply(unique(sub.seu$orig.ident), function(uid){
+    Idents(sub.seu) <- sub.seu$orig.ident
+    sub.uid.seu <- subset(x=sub.seu, idents=uid)
+    
+    Idents(sub.uid.seu) <- sub.uid.seu$anno_clusters
+    dat <- DotPlot(sub.uid.seu, features = sorted_markers)$data[,c(1:4)]
+    dat$UID <- paste0(dat[,3], "_", dat[,4])
+    return(dat)
+  })
+  
+  avg_exp <- Reduce(function(x,y) merge(x,y, by=c('UID')), 
+                    lapply(uid_dots, function(i) i[,c('avg.exp', 'UID')]))
+  pct_exp <- Reduce(function(x,y) merge(x,y, by=c('UID')), 
+                    lapply(uid_dots, function(i) i[,c('pct.exp', 'UID')]))
+  
+  return(list("exp"=avg_exp,"pct"=pct_exp))
+})
+names(group_exps) <- unique(seu.harmony$group.ident)
+
+common_uid <- unique(sort(unlist(sapply(group_exps, function(i) i[[1]]$UID))))
+uid_df <- data.frame("UID"=common_uid)
+t_ret <- 'stat'
+
+# Go by avg_expression or percent_expressed
+grp_delta <- lapply(setNames(c("exp", "pct"), c("exp", "pct")), function(grp){
+  # Set the comparison group 
+  lapply(group_exps, function(groupa){
+    ga <- groupa[[grp]]
+    ga <- merge(uid_df, ga, by='UID', all.x=TRUE)
+    sapply(group_exps, function(groupb){
+      gb <- groupb[[grp]]
+      gb <- merge(uid_df, gb, by='UID', all.x=TRUE)
+      delta <- sapply(seq_along(rownames(ga)), function(rowidx){
+        tryCatch({
+          tres <- t.test(ga[rowidx,-1], gb[rowidx,-1])
+          if(t_ret=='stat') tres$statistic else tres$p.value
+        }, error=function(e){NA})
+      })
+      setNames(delta, ga$UID)
+    })
+  })
+})
+
+
+
+Idents(seu.harmony) <- seu.harmony$anno_clusters
+
+
+#############################
+#### 5.c Dimension Plots ####
 # Umap visualization, separated by clusters
 pdf(file.path(outdir_plus, "nc-dimplot_clusters.pdf"), width=17)
 p1 <- DimPlot(object = seu.harmony, reduction = "umap", group.by='seurat_clusters', 
@@ -273,7 +381,29 @@ p1 <- DimPlot(object = seu.harmony, reduction = "umap", group.by='seurat_cluster
 p2 <- DimPlot(object = seu.harmony, reduction = "umap", group.by='anno_clusters', 
               label = TRUE, pt.size = 0.5)
 p1 + p2
+p2
 dev.off()
+
+# Umap visualization of individual tissue types
+ps <- lapply(unique(seu.harmony$group.ident), function(ident){
+  Idents(seu.harmony) <- seu.harmony$group.ident
+  sub.seu <- subset(x=seu.harmony, idents=ident)
+  
+  DimPlot(object = sub.seu, reduction = "umap", group.by='anno_clusters', 
+          label = TRUE, pt.size = 0.5,
+          cols=alpha(colorRampPalette(brewer.pal(9,"Set1"))(length(unique(sub.seu$anno_clusters))),
+                    0.1))
+  
+})
+names(ps) <- unique(seu.harmony$group.ident)
+pdf(file.path(outdir_plus, "nc-dimplot_groups.pdf"), width=17)
+ps[['AdjNorm_TISSUE']]
+ps[['Healthy_PBMC']]
+ps[['PDAC_PBMC']]
+ps[['PDAC_TISSUE']]
+dev.off()
+Idents(seu.harmony) <- seu.harmony$anno_clusters
+
 
 # Feature plots of the sorted Marker Genes
 pdf(file.path(outdir_plus, "nc-featplots.pdf"), height=14, width=14)
@@ -282,8 +412,8 @@ FeaturePlot(seu.harmony, features = sorted_markers, pt.size = 0.5, ncol = 4,
 dev.off()
 
 
-
-## Finding top similar genes
+#######################################
+#### 5.d Finding top similar genes ####
 ### Summarize mean-exp and pct in each cell type/cluster
 seu_cl <- lapply(levels(seu.harmony$seurat_clusters), function(cl){
   cl_idx <- which(seu.harmony$seurat_clusters == cl)
