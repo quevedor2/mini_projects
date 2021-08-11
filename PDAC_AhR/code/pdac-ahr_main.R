@@ -526,7 +526,8 @@ Idents(seu.harmony) <- seu.harmony$anno_clusters
 # Feature plots of the sorted Marker Genes
 pdf(file.path(outdir_plus, "nc-featplots.pdf"), height=14, width=14)
 FeaturePlot(seu.harmony, features = sorted_markers, pt.size = 0.5, ncol = 4,
-            cols=c("#f7f4f9", "#91003f"), order=TRUE, keep.scale=NULL, label=FALSE)
+            cols=c("#f7f4f9", "#91003f"), order=TRUE, keep.scale=NULL, 
+            label=FALSE, raster=TRUE)
 dev.off()
 
 # Feature plots of the sorted Marker Genes
@@ -715,8 +716,18 @@ pga_meta <- merge(pga_meta, pga_tissues, all.x=TRUE, by='cellids')
 pga_meta <- setNames(rowSums(pga_meta[,2:3], na.rm = TRUE), pga_meta$cellids)
 seu.harmony$PGA <- pga_meta
 
+#####################################################
+#### 6.c Reporting PGA across clusters/celltypes ####
+pga_spl     <- split(seu.harmony$PGA, seu.harmony$anno_clusters)
+write.table(t(sapply(pga_spl, summary)), file=file.path(outdir_plus, "pga", "pga_celltype.tsv"),
+            quote=FALSE, col.names=TRUE, row.names = TRUE)
+
+pga_spl     <- split(seu.harmony$PGA, seu.harmony$seurat_clusters)
+write.table(t(sapply(pga_spl, summary)), file=file.path(outdir_plus, "pga", "pga_clusters.tsv"),
+            quote=FALSE, col.names=TRUE, row.names = TRUE)
+
 ################################
-#### 6.c Compare AhR to PGA ####
+#### 6.d Compare AhR to PGA ####
 pga_spl <- split(seu.harmony$PGA, seu.harmony$seurat_clusters_ord)
 cl_cnts <- sapply(split(clusters_anno, clusters_anno$anno),nrow)
 cols <- colorRampPalette(brewer.pal(n = 12, name = "Set3"))(length(cl_cnts))
@@ -769,8 +780,8 @@ dev.off()
 # x <- table(seu.harmony$orig.ident)
 # ids <- unique(gsub("_[a-zA-Z0-9]+$", "", names(x)))
 # sapply(ids, function(id) sum(x[grep(id, names(x))]))
-###############################################
-#### 7 Removing PGA clusters and comparing ####
+#################################################
+#### 7.b Removing PGA clusters and comparing ####
 # Establish a threshold of median PGA for a cluster
 pga_spl     <- split(seu.harmony$PGA, seu.harmony$seurat_clusters_ord)
 pga_summ    <- sapply(pga_spl, summary)
