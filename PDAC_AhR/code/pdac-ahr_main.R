@@ -8,6 +8,7 @@ library(reshape2)
 library(infercnv)
 library(RColorBrewer)
 library(scales)
+library(ggplot2)
 
 ##############################################
 #### 1. Set up environment and parameters ####
@@ -369,93 +370,122 @@ Idents(seu.harmony) <- seu.harmony$anno_clusters
 
 ## Annotated clusters, test for differentials between tissue types
 anno_ord <- levels(factor(seu.harmony$anno_clusters))
-group_exps <- lapply(unique(seu.harmony$group.ident), function(ident){
-  print(ident)
-  Idents(seu.harmony) <- seu.harmony$group.ident
-  sub.seu <- subset(x=seu.harmony, idents=ident)
-  
-  uid_dots <- lapply(unique(sub.seu$orig.ident), function(uid){
-    Idents(sub.seu) <- sub.seu$orig.ident
-    sub.uid.seu <- subset(x=sub.seu, idents=uid)
+clust_ord <- unique(seu.harmony@meta.data[,c('anno_clusters', 'seurat_clusters')])
+clust_ord <- clust_ord[order(factor(clust_ord$anno_clusters, levels=anno_ord)),]
+clust_ord <- as.character(clust_ord$seurat_clusters)
+
+clustids <- c('seurat_clusters', 'anno_clusters')
+names(clustids) <- clustids
+clust_group_exps <- lapply(clustids, function(clustid){
+  group_exps <- lapply(unique(seu.harmony$group.ident), function(ident){
+    print(ident)
+    Idents(seu.harmony) <- seu.harmony$group.ident
+    sub.seu <- subset(x=seu.harmony, idents=ident)
     
-    Idents(sub.uid.seu) <- factor(sub.uid.seu$anno_clusters, levels=anno_ord)
-    dat <- DotPlot(sub.uid.seu, features = sorted_markers)$data[,c(1:4)]
-    dat$UID <- paste0(dat[,3], "_", dat[,4])
-    return(dat)
+    uid_dots <- lapply(unique(sub.seu$orig.ident), function(uid){
+      Idents(sub.seu) <- sub.seu$orig.ident
+      sub.uid.seu <- subset(x=sub.seu, idents=uid)
+      
+      if(clustid=='seurat_clusters'){
+        Idents(sub.uid.seu) <- factor(sub.uid.seu$seurat_clusters, levels=clust_ord)
+      } else if(clustid=='anno_clusters'){
+        Idents(sub.uid.seu) <- factor(sub.uid.seu$anno_clusters, levels=anno_ord)
+      }
+      dat <- DotPlot(sub.uid.seu, features = sorted_markers)$data[,c(1:4)]
+      dat$UID <- paste0(dat[,3], "_", dat[,4])
+      return(dat)
+    })
+    
+    avg_exp <- Reduce(function(x,y) merge(x,y, by=c('UID'), all=TRUE), 
+                      lapply(uid_dots, function(i) i[,c('avg.exp', 'UID')]))
+    pct_exp <- Reduce(function(x,y) merge(x,y, by=c('UID'), all=TRUE), 
+                      lapply(uid_dots, function(i) i[,c('pct.exp', 'UID')]))
+    
+    return(list("exp"=avg_exp,"pct"=pct_exp))
   })
-  
-  avg_exp <- Reduce(function(x,y) merge(x,y, by=c('UID'), all=TRUE), 
-                    lapply(uid_dots, function(i) i[,c('avg.exp', 'UID')]))
-  pct_exp <- Reduce(function(x,y) merge(x,y, by=c('UID'), all=TRUE), 
-                    lapply(uid_dots, function(i) i[,c('pct.exp', 'UID')]))
-  
-  return(list("exp"=avg_exp,"pct"=pct_exp))
+  names(group_exps) <- unique(seu.harmony$group.ident)
+  return(group_exps)
 })
-names(group_exps) <- unique(seu.harmony$group.ident)
 
-# Set up order of UIDs (e.g. gene_Celltype)
-common_uid <- unique(sort(unlist(sapply(group_exps, function(i) i[[1]]$UID))))
-uid_df <- data.frame("UID"=common_uid)
-t_ret <- 'stat'
-
-# Go by avg_expression or percent_expressed
-grp_delta <- lapply(setNames(c("exp", "pct"), c("exp", "pct")), function(grp){
-  # Set the comparison group 
-  lapply(group_exps, function(groupa){
-    ga <- groupa[[grp]]
-    ga <- merge(uid_df, ga, by='UID', all.x=TRUE)
-    # Compare groupA to groupB using a t-test
-    sapply(group_exps, function(groupb){
-      gb <- groupb[[grp]]
-      gb <- merge(uid_df, gb, by='UID', all.x=TRUE)
-      delta <- sapply(seq_along(rownames(ga)), function(rowidx){
-        tryCatch({
-          tres <- t.test(ga[rowidx,-1], gb[rowidx,-1])
-          if(t_ret=='stat') tres$statistic else tres$p.value
-        }, error=function(e){NA})
+ps <- lapply(clustids, function(clustid){
+  group_exps <- clust_group_exps[[clustid]]
+  
+  # Set up order of UIDs (e.g. gene_Celltype)
+  common_uid <- unique(sort(unlist(sapply(group_exps, function(i) i[[1]]$UID))))
+  uid_df <- data.frame("UID"=common_uid)
+  t_ret <- 'stat'
+  
+  # Go by avg_expression or percent_expressed
+  grp_delta <- lapply(setNames(c("exp", "pct"), c("exp", "pct")), function(grp){
+    # Set the comparison group 
+    lapply(group_exps, function(groupa){
+      ga <- groupa[[grp]]
+      ga <- merge(uid_df, ga, by='UID', all.x=TRUE)
+      # Compare groupA to groupB using a t-test
+      sapply(group_exps, function(groupb){
+        gb <- groupb[[grp]]
+        gb <- merge(uid_df, gb, by='UID', all.x=TRUE)
+        delta <- sapply(seq_along(rownames(ga)), function(rowidx){
+          tryCatch({
+            tres <- t.test(ga[rowidx,-1], gb[rowidx,-1])
+            if(t_ret=='stat') tres$statistic else tres$p.value
+          }, error=function(e){NA})
+        })
+        setNames(delta, ga$UID)
       })
-      setNames(delta, ga$UID)
     })
   })
+  
+  # Isolate deltas by AHR
+  ahr_delta <- lapply(grp_delta, function(exp_pct){
+    df <- as.data.frame(exp_pct$PDAC_TISSUE)
+    dfspl <- split(df, f=factor(gsub("_.*", "", rownames(df))))
+    df <- dfspl$AHR # $PDAC_TISSUE
+    df$celltype <- gsub("^.*_", "", rownames(df))
+    return(df)
+  })
+  
+  # ggplot formatted melted dataframe
+  ahr_ggpt <- lapply(setNames(names(grp_delta[[1]]), names(grp_delta[[1]])), function(tissue){
+    colids <- c('celltype', tissue)
+    merged_ahr <- merge(ahr_delta[[1]][, colids], ahr_delta[[2]][, colids], 
+                        by='celltype', all=TRUE)
+    colnames(merged_ahr)[-1] <- names(grp_delta)
+    if(clustid=='seurat_clusters'){
+      merged_ahr <- merged_ahr[match(clust_ord, as.character(merged_ahr$celltype)),]
+      merged_ahr$celltype <- factor(merged_ahr$celltype, levels=clust_ord)
+    }else if(clustid=='anno_clusters'){
+      merged_ahr <- merged_ahr[match(anno_ord, merged_ahr$celltype),]
+      merged_ahr$celltype <- factor(merged_ahr$celltype, levels=anno_ord)
+    }
+    merged_ahr$tissue <- tissue
+    merged_ahr
+  })
+  
+  ## ggplot wizardry
+  merged_ahr <- do.call(rbind, ahr_ggpt[c(1:3)])
+  p<-ggplot(data=merged_ahr, aes(x=celltype, y=exp, fill=pct)) +
+    labs(x='Cell type', y='Expression t-statistic', title='PDAC Tissue') +
+    geom_bar(stat="identity") +
+    ylim(-8,8) +
+    theme_minimal() + 
+    scale_fill_gradient2(low='#2166ac', mid='#e0e0e0', high='#b2182b', 
+                         space='Lab', midpoint=0) +
+    coord_flip() + 
+    facet_grid(cols = vars(tissue))
+  
+  return(list("ggplot"=p, "table"=merged_ahr))
 })
 
-# Isolate deltas by AHR
-ahr_delta <- lapply(grp_delta, function(exp_pct){
-  df <- as.data.frame(exp_pct$PDAC_TISSUE)
-  dfspl <- split(df, f=factor(gsub("_.*", "", rownames(df))))
-  df <- dfspl$AHR # $PDAC_TISSUE
-  df$celltype <- gsub("^.*_", "", rownames(df))
-  return(df)
-})
-
-ahr_ggpt <- lapply(setNames(names(grp_delta[[1]]), names(grp_delta[[1]])), function(tissue){
-  colids <- c('celltype', tissue)
-  merged_ahr <- merge(ahr_delta[[1]][, colids], ahr_delta[[2]][, colids], 
-                      by='celltype', all=TRUE)
-  colnames(merged_ahr)[-1] <- names(grp_delta)
-  merged_ahr <- merged_ahr[match(merged_ahr$celltype, anno_ord),]
-  merged_ahr$tissue <- tissue
-  merged_ahr
-})
-
-## ggplot wizardry
-merged_ahr <- do.call(rbind, ahr_ggpt[c(1:3)])
-p<-ggplot(data=merged_ahr, aes(x=celltype, y=exp, fill=pct)) +
-  labs(x='Cell type', y='Mean expression (delta)', title=tissue) +
-  geom_bar(stat="identity") +
-  ylim(-8,8) +
-  theme_minimal() + 
-  scale_fill_gradient2(low='#2166ac', mid='#e0e0e0', high='#b2182b', 
-                       space='Lab', midpoint=0) +
-  coord_flip() + 
-  facet_grid(cols = vars(tissue))
-pdf(file.path(outdir_plus, "nc-dotplot_delta.pdf"))
-p
+pdf(file.path(outdir_plus, "nc-barplot_delta.pdf"))
+ps[['anno_clusters']][['ggplot']]
+ps[['seurat_clusters']][['ggplot']]
 dev.off()
 
-write.table(merged_ahr, file=file.path(outdir_plus, "nc-dotplot_delta.tsv"),
+write.table(ps$anno_clusters$table, file=file.path(outdir_plus, "nc-barplot_delta-anno.tsv"),
             sep="\t", col.names=TRUE, row.names=FALSE, quote=FALSE)
-
+write.table(ps$seurat_clusters$table, file=file.path(outdir_plus, "nc-barplot_delta-clust.tsv"),
+            sep="\t", col.names=TRUE, row.names=FALSE, quote=FALSE)
 
 Idents(seu.harmony) <- seu.harmony$anno_clusters
 
@@ -484,7 +514,7 @@ ps <- lapply(unique(seu.harmony$group.ident), function(ident){
   
 })
 names(ps) <- unique(seu.harmony$group.ident)
-pdf(file.path(outdir_plus, "nc-dimplot_groups.pdf"), width=17)
+pdf(file.path(outdir_plus, "nc-dimplot_groups.pdf"), width=9)
 ps[['AdjNorm_TISSUE']]
 ps[['Healthy_PBMC']]
 ps[['PDAC_PBMC']]
@@ -498,6 +528,24 @@ pdf(file.path(outdir_plus, "nc-featplots.pdf"), height=14, width=14)
 FeaturePlot(seu.harmony, features = sorted_markers, pt.size = 0.5, ncol = 4,
             cols=c("#f7f4f9", "#91003f"), order=TRUE, keep.scale=NULL, label=FALSE)
 dev.off()
+
+# Feature plots of the sorted Marker Genes
+ps <- lapply(unique(seu.harmony$group.ident), function(ident){
+  Idents(seu.harmony) <- seu.harmony$group.ident
+  sub.seu <- subset(x=seu.harmony, idents=ident)
+  
+  FeaturePlot(sub.seu, features = sorted_markers, pt.size = 0.5, ncol = 4,
+              cols=c("#f7f4f9", "#91003f"), order=TRUE, keep.scale=NULL, 
+              label=FALSE, raster=TRUE)
+})
+names(ps) <- unique(seu.harmony$group.ident)
+pdf(file.path(outdir_plus, "nc-featplots_groups.pdf"), height=14, width=14)
+ps[['AdjNorm_TISSUE']]
+ps[['Healthy_PBMC']]
+ps[['PDAC_PBMC']]
+ps[['PDAC_TISSUE']]
+dev.off()
+
 
 
 #######################################
@@ -542,20 +590,14 @@ w_sim_df      <- data.frame("gene"=names(w_comb_sim),
                             "dist_mean_expr"=w_expr_sim, 
                             "dist_percent_expr"=w_pct_sim, 
                             "dist_combined"=w_comb_sim)[ord_idx,]
-write.table(w_sim_df, file = file.path(outdir, "features", "weighted_ahr_dist.tsv"), 
+write.table(w_sim_df, file = file.path(outdir_plus, "weighted_ahr_dist.tsv"), 
             sep="\t", quote=FALSE, row.names = FALSE, col.names = TRUE)
 
 # Plot the top 25 most similar features to AHR
 pdf(file.path(outdir_plus, "nc-featplots_top25.pdf"), height=15, width=15)
 FeaturePlot(seu.harmony, features = names(head(sort(w_comb_sim, decreasing = FALSE), 25)), 
             pt.size = 0.5, ncol = 5, cols=c("#f7f4f9", "#91003f"), order=TRUE, 
-            keep.scale='all', label=FALSE)
-dev.off()
-
-pdf(file.path(outdir_plus, "nc-featplots_top25.pdf"), height=15, width=15)
-FeaturePlot(seu.harmony, features = names(head(sort(w_comb_sim, decreasing = FALSE), 25)), 
-            pt.size = 0.5, ncol = 5, cols=c("#f7f4f9", "#91003f"), order=TRUE, 
-            keep.scale='all', label=FALSE)
+            keep.scale='all', label=FALSE, raster=TRUE)
 dev.off()
 
 pdf(file.path(outdir_plus, "nc-dotplot_top25.pdf"), height=15, width=20)
@@ -565,94 +607,101 @@ DotPlot(seu.harmony, features =  names(head(sort(w_comb_sim, decreasing = FALSE)
   RotatedAxis() + FontSize(x.text = 17, y.text = 17)
 dev.off()
 
-##################
-#### 6. inferCNV ####
-
+#########################################
+#### 6.b adding in PGA from inferCNV ####
 ## **NOTE**: Refer to tn-matched_infercnv.R for script on running the main infercnv pipeline
-infercnv_outdir <- '/cluster/projects/mcgahalab/data/mcgahalab/pdac_ahr/results/infercnv/matched_pbmc-miniclust'
+
+if(harmony_file=='harmony'){
+  infercnv_outdir <- file.path(outdir, '/infercnv/matched_pbmc-miniclust')
+} else if(harmony_file=='harmony2'){
+  infercnv_outdir <- file.path(outdir, '/infercnv/matched_pbmc-miniclust2')
+}
 infercnv_obj <- "21_denoiseHMMi6.NF_NA.SD_1.5.NL_FALSE.infercnv_obj"
 infercnv_cnv <- "expr.infercnv.18_HMM_pred.Bayes_Net.Pnorm_0.5.dat"
 ranges <- seq(0, 1, by=0.01)
 qvals <- c('5%', '95%')   # Quantiles to use as threshold of CNV calling
 norm_limits <- TRUE       # Whether to use just normal cells to established denoised limits
 
-dir.create(file.path(infercnv_outdir,  "pga"))
-samples <- grep(list.files(infercnv_outdir), pattern="pga", invert=TRUE, value = TRUE)
-pdf(file.path(infercnv_outdir, "pga", "pga_boxplots.pdf"), width = 9, height = 12)
-pga_tissues <- lapply(samples, function(tissue){
-  #tissue <- list.files(infercnv_outdir)[1]
-  
-  obj   <- readRDS(file.path(infercnv_outdir, tissue, infercnv_obj))
-  cnv_gene <- read.table(file.path(infercnv_outdir, tissue, infercnv_cnv), sep="\t", 
-                         header = TRUE, stringsAsFactors = FALSE, check.names = FALSE)
-  
-  ## Establsh the limits for loss/normal/gain gene expr
-  if(norm_limits){
-    message("Using all NORMAL cells to establish CNV limits")
-    normref <- (sapply(strsplit(colnames(obj@expr.data), split="_"), function(i) i[[2]]) != 'TISSUE')
-    quantile_vals <- round(quantile(as.numeric(obj@expr.data[,which(normref)]), ranges),4)
-  } else {
-    message("Using all TISSUE and NORMAL cells to establish CNV limits")
-    quantile_vals <- round(quantile(as.numeric(obj@expr.data), ranges),4)
-  }
-  quantile_thresh <- c(0, quantile_vals[qvals], 2)
-  lvls <- levels(factor(cut(quantile_thresh, quantile_thresh)))
-  
-  ## Split gene expr into loss (-1), normal (0), or gain (1)
-  thresh_expr <- cut(obj@expr.data, quantile_thresh) %>%
-    as.integer(factor(., levels=lvls)) - median(seq_along(lvls))
-  thresh_expr <- matrix(thresh_expr, ncol=ncol(obj@expr.data))
-  rownames(thresh_expr) <- rownames(obj@expr.data)
-  colnames(thresh_expr) <- colnames(obj@expr.data)
-  
-  ## Calculate percent-genome-altered (PGA)
-  genes       <- obj@gene_order
-  gene_width  <- with(genes, stop-start)
-  
-  pga <- apply(thresh_expr, 2, function(cellexpr){
-    sum(gene_width[cellexpr != 0])
-  })
-  pga_thresh <- round(pga/sum(gene_width), 4)
-  
-  ## Calculate PGA from outputted Bayes GenexSample matrix
-  pga <- apply(cnv_gene, 2, function(cellexpr){
-    sum(gene_width[cellexpr != 3])
-  })
-  pga_region <- round(pga/sum(gene_width), 4)
-  
-  ## Calculate PGA thresholded to CNV regions only
-  pga <- sapply(seq_along(colnames(cnv_gene)), function(sidx){
-    sum(gene_width[which((cnv_gene[,sidx] != 3) & (thresh_expr[,sidx] != 0))])
-  })
-  pga_capped <- round(pga/sum(gene_width), 4)
-  
-  ## Report PGA by group
-  par(mfrow=c(3,1))
-  sapply(c('pga_capped', 'pga_thresh', 'pga_region'), function(pga_type){
-    pga <- switch(pga_type,
-                  pga_capped=pga_capped,
-                  pga_thresh=pga_thresh,
-                  pga_region=pga_region)
+if(!file.exists(file.path(infercnv_outdir))){
+  dir.create(file.path(infercnv_outdir,  "pga"))
+  samples <- grep(list.files(infercnv_outdir), pattern="pga", invert=TRUE, value = TRUE)
+  pdf(file.path(infercnv_outdir, "pga", "pga_boxplots.pdf"), width = 9, height = 12)
+  pga_tissues <- lapply(samples, function(tissue){
+    #tissue <- list.files(infercnv_outdir)[1]
     
-    pga_grps <- lapply(obj@tumor_subclusters$subclusters, function(idx){
-      pga[idx[[1]]]
+    obj   <- readRDS(file.path(infercnv_outdir, tissue, infercnv_obj))
+    cnv_gene <- read.table(file.path(infercnv_outdir, tissue, infercnv_cnv), sep="\t", 
+                           header = TRUE, stringsAsFactors = FALSE, check.names = FALSE)
+    
+    ## Establsh the limits for loss/normal/gain gene expr
+    if(norm_limits){
+      message("Using all NORMAL cells to establish CNV limits")
+      normref <- (sapply(strsplit(colnames(obj@expr.data), split="_"), function(i) i[[2]]) != 'TISSUE')
+      quantile_vals <- round(quantile(as.numeric(obj@expr.data[,which(normref)]), ranges),4)
+    } else {
+      message("Using all TISSUE and NORMAL cells to establish CNV limits")
+      quantile_vals <- round(quantile(as.numeric(obj@expr.data), ranges),4)
+    }
+    quantile_thresh <- c(0, quantile_vals[qvals], 2)
+    lvls <- levels(factor(cut(quantile_thresh, quantile_thresh)))
+    
+    ## Split gene expr into loss (-1), normal (0), or gain (1)
+    thresh_expr <- cut(obj@expr.data, quantile_thresh) %>%
+      as.integer(factor(., levels=lvls)) - median(seq_along(lvls))
+    thresh_expr <- matrix(thresh_expr, ncol=ncol(obj@expr.data))
+    rownames(thresh_expr) <- rownames(obj@expr.data)
+    colnames(thresh_expr) <- colnames(obj@expr.data)
+    
+    ## Calculate percent-genome-altered (PGA)
+    genes       <- obj@gene_order
+    gene_width  <- with(genes, stop-start)
+    
+    pga <- apply(thresh_expr, 2, function(cellexpr){
+      sum(gene_width[cellexpr != 0])
     })
-    tn_grps <- split(pga,normref)
-    pga_grps <- c(pga_grps, tn_grps)
+    pga_thresh <- round(pga/sum(gene_width), 4)
     
-    boxplot(pga_grps, ylim=c(0,0.6), las=2, cex.axis=0.6, 
-            ylab='PGA', xlab='Clusters', main=paste0(pga_type, "_", tissue))
+    ## Calculate PGA from outputted Bayes GenexSample matrix
+    pga <- apply(cnv_gene, 2, function(cellexpr){
+      sum(gene_width[cellexpr != 3])
+    })
+    pga_region <- round(pga/sum(gene_width), 4)
+    
+    ## Calculate PGA thresholded to CNV regions only
+    pga <- sapply(seq_along(colnames(cnv_gene)), function(sidx){
+      sum(gene_width[which((cnv_gene[,sidx] != 3) & (thresh_expr[,sidx] != 0))])
+    })
+    pga_capped <- round(pga/sum(gene_width), 4)
+    
+    ## Report PGA by group
+    par(mfrow=c(3,1))
+    sapply(c('pga_capped', 'pga_thresh', 'pga_region'), function(pga_type){
+      pga <- switch(pga_type,
+                    pga_capped=pga_capped,
+                    pga_thresh=pga_thresh,
+                    pga_region=pga_region)
+      
+      pga_grps <- lapply(obj@tumor_subclusters$subclusters, function(idx){
+        pga[idx[[1]]]
+      })
+      tn_grps <- split(pga,normref)
+      pga_grps <- c(pga_grps, tn_grps)
+      
+      boxplot(pga_grps, ylim=c(0,0.6), las=2, cex.axis=0.6, 
+              ylab='PGA', xlab='Clusters', main=paste0(pga_type, "_", tissue))
+    })
+    
+    return(setNames(pga_capped, colnames(obj@expr.data)))
   })
+  dev.off()
   
-  return(setNames(pga_capped, colnames(obj@expr.data)))
-})
-dev.off()
+  pga_tissues <- setNames(pga_tissues, samples)
+  saveRDS(pga_tissues, file = file.path(infercnv_outdir, "pga_tisses.rds"))
+} else {
+  pga_tissues <- readRDS(file.path(infercnv_outdir, "pga_tisses.rds"))
+}
 
-pga_tissues <- setNames(pga_tissues, samples)
-saveRDS(pga_tissues, file = file.path(infercnv_outdir, "pga_tisses.rds"))
-pga_tissues <- readRDS(file.path(infercnv_outdir, "pga_tisses.rds"))
-
-# Remove duplicate cells that stem from same ehalthy PBMCs
+# Remove duplicate cells that stem from same healthy PBMCs
 pga_tissues <- unlist(pga_tissues)
 dup_idx <- which(duplicated(gsub("^.*\\.", "", names(pga_tissues))))
 pga_tissues <- pga_tissues[-dup_idx]
@@ -666,10 +715,13 @@ pga_meta <- merge(pga_meta, pga_tissues, all.x=TRUE, by='cellids')
 pga_meta <- setNames(rowSums(pga_meta[,2:3], na.rm = TRUE), pga_meta$cellids)
 seu.harmony$PGA <- pga_meta
 
+################################
+#### 6.c Compare AhR to PGA ####
 pga_spl <- split(seu.harmony$PGA, seu.harmony$seurat_clusters_ord)
 cl_cnts <- sapply(split(clusters_anno, clusters_anno$anno),nrow)
-cols <- brewer.pal(n = length(cl_cnts), name = "Set3")
-pdf(file.path(outdir, "features", "pga_boxplots.pdf"), width = 9, height = 5)
+cols <- colorRampPalette(brewer.pal(n = 12, name = "Set3"))(length(cl_cnts))
+dir.create(file.path(outdir_plus, "pga"), showWarnings = FALSE)
+pdf(file.path(outdir_plus, "pga", "pga_boxplots.pdf"), width = 9, height = 5)
 par(mfrow=c(2,1))
 par(mar=c(0, 4.1, 10.1, 2.1))
 barplot(sapply(pga_spl, length), col=rep(cols, cl_cnts), 
@@ -696,21 +748,151 @@ stripchart(pga_spl_hiiqr,              # Data
 dev.off()
 
 # Feature plots of AhR expression and PGA blended together
-pdf(file.path(outdir, "features", "nc-featplots_pga.pdf"), width = 12, height = 4)
+pdf(file.path(outdir_plus, "pga", "nc-featplots_ahr-pga.pdf"), width = 12, height = 4)
 FeaturePlot(seu.harmony, features = c('AHR', 'PGA'), pt.size = 0.5, ncol = 1,
             cols=c("#f7f7f7", "#c51b7d", "#4d9221"), order=TRUE, keep.scale=NULL, label=FALSE,
-            blend=TRUE)
+            blend=TRUE, raster=TRUE)
 dev.off()
 
 # Dot plot of AhR expression and PGA using Harmony Clusters
-pdf(file.path(outdir, "features", "nc-dotplot_pga.pdf"), width=6, height = 12)
+pdf(file.path(outdir_plus, "pga", "nc-dotplot_ahr-pga.pdf"), width=6, height = 12)
 Idents(seu.harmony) <- seu.harmony$seurat_clusters_ord
 DotPlot(seu.harmony, features = c('AHR', 'PGA'), # unique(unlist(natcan_markers)),
         cols = c('grey', 'darkred'), dot.scale = 10) + 
   RotatedAxis() + FontSize(x.text = 17, y.text = 17)
+DotPlot(seu.harmony, features = c('PGA'), # unique(unlist(natcan_markers)),
+        cols = c('grey', '#4d9221'), dot.scale = 10) + 
+  RotatedAxis() + FontSize(x.text = 17, y.text = 17)
 dev.off()
 
 
-x <- table(seu.harmony$orig.ident)
-ids <- unique(gsub("_[a-zA-Z0-9]+$", "", names(x)))
-sapply(ids, function(id) sum(x[grep(id, names(x))]))
+# x <- table(seu.harmony$orig.ident)
+# ids <- unique(gsub("_[a-zA-Z0-9]+$", "", names(x)))
+# sapply(ids, function(id) sum(x[grep(id, names(x))]))
+###############################################
+#### 7 Removing PGA clusters and comparing ####
+# Establish a threshold of median PGA for a cluster
+pga_spl     <- split(seu.harmony$PGA, seu.harmony$seurat_clusters_ord)
+pga_summ    <- sapply(pga_spl, summary)
+pga_thresh  <- quantile(pga_summ['Median',], 0.9)
+pga_clusts  <- colnames(pga_summ)[pga_summ['Median',] >= pga_thresh]
+
+# Remove the PGA clusters that exceed a set threshold
+seu.harmony$tn <- 'Normal'
+seu.harmony$tn[which(as.character(seu.harmony$seurat_clusters) %in% pga_clusts)] <- 'Tumor'
+Idents(seu.harmony) <- seu.harmony$tn
+seu.nopga <- subset(x=seu.harmony, idents='Normal')
+
+## Annotated clusters, test for differentials between tissue types
+anno_ord <- levels(factor(seu.harmony$anno_clusters))
+clust_ord <- unique(seu.harmony@meta.data[,c('anno_clusters', 'seurat_clusters')])
+clust_ord <- clust_ord[order(factor(clust_ord$anno_clusters, levels=anno_ord)),]
+clust_ord <- as.character(clust_ord$seurat_clusters)
+
+clustids <- c('seurat_clusters', 'anno_clusters')
+names(clustids) <- clustids
+clust_group_exps <- lapply(clustids, function(clustid){
+  group_exps <- lapply(unique(seu.harmony$group.ident), function(ident){
+    print(ident)
+    Idents(seu.nopga) <- seu.nopga$group.ident
+    sub.seu <- subset(x=seu.nopga, idents=ident)
+    
+    uid_dots <- lapply(unique(sub.seu$orig.ident), function(uid){
+      Idents(sub.seu) <- sub.seu$orig.ident
+      sub.uid.seu <- subset(x=sub.seu, idents=uid)
+      
+      if(clustid=='seurat_clusters'){
+        Idents(sub.uid.seu) <- factor(sub.uid.seu$seurat_clusters, levels=clust_ord)
+      } else if(clustid=='anno_clusters'){
+        Idents(sub.uid.seu) <- factor(sub.uid.seu$anno_clusters, levels=anno_ord)
+      }
+      dat <- DotPlot(sub.uid.seu, features = sorted_markers)$data[,c(1:4)]
+      dat$UID <- paste0(dat[,3], "_", dat[,4])
+      return(dat)
+    })
+    
+    avg_exp <- Reduce(function(x,y) merge(x,y, by=c('UID'), all=TRUE), 
+                      lapply(uid_dots, function(i) i[,c('avg.exp', 'UID')]))
+    pct_exp <- Reduce(function(x,y) merge(x,y, by=c('UID'), all=TRUE), 
+                      lapply(uid_dots, function(i) i[,c('pct.exp', 'UID')]))
+    
+    return(list("exp"=avg_exp,"pct"=pct_exp))
+  })
+  names(group_exps) <- unique(seu.nopga$group.ident)
+  return(group_exps)
+})
+
+ps <- lapply(clustids, function(clustid){
+  group_exps <- clust_group_exps[[clustid]]
+  
+  # Set up order of UIDs (e.g. gene_Celltype)
+  common_uid <- unique(sort(unlist(sapply(group_exps, function(i) i[[1]]$UID))))
+  uid_df <- data.frame("UID"=common_uid)
+  t_ret <- 'stat'
+  
+  # Go by avg_expression or percent_expressed
+  grp_delta <- lapply(setNames(c("exp", "pct"), c("exp", "pct")), function(grp){
+    # Set the comparison group 
+    lapply(group_exps, function(groupa){
+      ga <- groupa[[grp]]
+      ga <- merge(uid_df, ga, by='UID', all.x=TRUE)
+      # Compare groupA to groupB using a t-test
+      sapply(group_exps, function(groupb){
+        gb <- groupb[[grp]]
+        gb <- merge(uid_df, gb, by='UID', all.x=TRUE)
+        delta <- sapply(seq_along(rownames(ga)), function(rowidx){
+          tryCatch({
+            tres <- t.test(ga[rowidx,-1], gb[rowidx,-1])
+            if(t_ret=='stat') tres$statistic else tres$p.value
+          }, error=function(e){NA})
+        })
+        setNames(delta, ga$UID)
+      })
+    })
+  })
+  
+  # Isolate deltas by AHR
+  ahr_delta <- lapply(grp_delta, function(exp_pct){
+    df <- as.data.frame(exp_pct$PDAC_TISSUE)
+    dfspl <- split(df, f=factor(gsub("_.*", "", rownames(df))))
+    df <- dfspl$AHR # $PDAC_TISSUE
+    df$celltype <- gsub("^.*_", "", rownames(df))
+    return(df)
+  })
+  
+  # ggplot formatted melted dataframe
+  ahr_ggpt <- lapply(setNames(names(grp_delta[[1]]), names(grp_delta[[1]])), function(tissue){
+    colids <- c('celltype', tissue)
+    merged_ahr <- merge(ahr_delta[[1]][, colids], ahr_delta[[2]][, colids], 
+                        by='celltype', all=TRUE)
+    colnames(merged_ahr)[-1] <- names(grp_delta)
+    if(clustid=='seurat_clusters'){
+      merged_ahr <- merged_ahr[match(clust_ord, as.character(merged_ahr$celltype)),]
+      merged_ahr$celltype <- factor(merged_ahr$celltype, levels=clust_ord)
+    }else if(clustid=='anno_clusters'){
+      merged_ahr <- merged_ahr[match(anno_ord, merged_ahr$celltype),]
+      merged_ahr$celltype <- factor(merged_ahr$celltype, levels=anno_ord)
+    }
+    merged_ahr$tissue <- tissue
+    merged_ahr
+  })
+  
+  ## ggplot wizardry
+  merged_ahr <- do.call(rbind, ahr_ggpt[c(1:3)])
+  p<-ggplot(data=merged_ahr, aes(x=celltype, y=exp, fill=pct)) +
+    labs(x='Cell type', y='Expression t-statistic', title='PDAC Tissue') +
+    geom_bar(stat="identity") +
+    ylim(-8,8) +
+    theme_minimal() + 
+    scale_fill_gradient2(low='#2166ac', mid='#e0e0e0', high='#b2182b', 
+                         space='Lab', midpoint=0) +
+    coord_flip() + 
+    facet_grid(cols = vars(tissue))
+  
+  return(list("ggplot"=p, "table"=merged_ahr))
+})
+
+pdf(file.path(outdir_plus, "pga", "nc-barplot_normal-delta.pdf"))
+ps[['anno_clusters']][['ggplot']]
+ps[['seurat_clusters']][['ggplot']]
+dev.off()
