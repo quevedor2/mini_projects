@@ -9,6 +9,9 @@ library(ggplot2)
 library(umap)
 library(ggdendro)
 
+PDIR='/cluster/projects/mcgahalab/data/mcgahalab/wither_mcgaha_ram/snakemake_workflow'
+setwd(PDIR)
+
 inpath <- 'results/deseq2'
 outpath <- 'results/adhoc/pca'
 dir.create(outpath, showWarnings = FALSE, recursive = TRUE)
