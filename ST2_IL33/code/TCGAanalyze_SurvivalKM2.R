@@ -1,10 +1,10 @@
-clinical_patient=meta_t
-dataGE=expr_t
-Genelist=list.gene
-Survresult=TRUE
-threshcuts = c(0.25, 0.50, 0.75)
-caption=unique(meta_t$treatment)
-p.cut = 1
+# clinical_patient=meta_t
+# dataGE=expr_t
+# Genelist=list.gene
+# Survresult=TRUE
+# threshcuts = c(0.25, 0.50, 0.75)
+# caption=unique(meta_t$treatment)
+# p.cut = 1
 
 TCGAanalyze_SurvivalKM2 <- function (clinical_patient, dataGE, Genelist, Survresult = FALSE, 
           threshcuts = c(0.25, 0.5, 0.75), p.cut = 0.05, caption='NULL', dataset='TCGA',
