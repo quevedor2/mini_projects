@@ -77,16 +77,17 @@ survivals <- lapply(projects, function(proj){
   
   dir.create(file.path(outdir, "survival_curves"), showWarnings = FALSE)
   if(visualize) pdf(file.path(outdir, "survival_curves", paste0(proj, "_skm.pdf")))
-  skm <- TCGAanalyze_SurvivalKM(clins[[proj]], log2exprs, list.gene, Survresult=TRUE,
-                         ThreshTop = 0.67, ThreshDown = 0.33, p.cut = 1)
+  skm <- TCGAanalyze_SurvivalKM2(clins[[proj]], log2exprs, list.gene, Survresult=TRUE,
+                         threshcuts = c(0.25, 0.50, 0.75), caption=proj, p.cut = 1)
   if(visualize) dev.off()
+  skm <- as.data.frame(do.call(rbind, skm))
+  rownames(skm) <- list.gene
   skm$HUGO <- names(list.gene[match(rownames(skm), list.gene)])
   return(skm)
 })
 # Format the data structures
 names(survivals) <- projects
 st2_pvals <- as.data.frame(t(sapply(survivals, function(s) s[list.gene['IL1RL1'],])))
-st2_pvals <- st2_pvals[order(unlist(st2_pvals$pvalue)),]
 save(st2_pvals, file=file.path(outdir, "survival_curves", "survival_pvals.rda"))
 
 ################################
