@@ -10,6 +10,7 @@ library(cowplot)
 library(scales)
 library(MASS)
 library(taRifx)
+source("~/git/mini_projects/ST2_IL33/code/TCGAanalyze_SurvivalKM2.R")
 
 PDIR <- '/cluster/projects/mcgahalab/data/mcgahalab/st2_il33/tcga'
 outdir <- file.path(PDIR, 'results')
