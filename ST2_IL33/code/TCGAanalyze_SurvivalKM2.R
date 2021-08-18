@@ -1,15 +1,28 @@
+clinical_patient=meta_t
+dataGE=expr_t
+Genelist=list.gene
+Survresult=TRUE
+threshcuts = c(0.25, 0.50, 0.75)
+caption=unique(meta_t$treatment)
+p.cut = 1
+
 TCGAanalyze_SurvivalKM2 <- function (clinical_patient, dataGE, Genelist, Survresult = FALSE, 
-          threshcuts = c(0.25, 0.5, 0.75), p.cut = 0.05, caption='NULL', group1, group2) {
+          threshcuts = c(0.25, 0.5, 0.75), p.cut = 0.05, caption='NULL', dataset='TCGA',
+          group1, group2) {
   require(plotrix)
   TCGAbiolinks:::check_package("survival")
-  Genelist <- intersect(rownames(dataGE), Genelist)
-  dataCancer <- dataGE[Genelist, group2, drop = FALSE]
-  dataNormal <- dataGE[Genelist, group1, drop = FALSE]
-  #dataCancer <- dataGE[Genelist, , drop = FALSE]
-  #dataNormal <- dataGE[Genelist, , drop = FALSE]
-  colnames(dataCancer) <- substr(colnames(dataCancer), 1, 12)
-  cfu <- clinical_patient[clinical_patient[, "bcr_patient_barcode"] %in% 
-                            substr(colnames(dataCancer), 1, 12), ]
+  Genelist <- intersect(rownames(dataGE), as.character(Genelist))
+  dataCancer <- dataGE[as.character(Genelist), group2, drop = FALSE]
+  dataNormal <- dataGE[as.character(Genelist), group1, drop = FALSE]
+  #dataCancer <- dataGE[as.character(Genelist), , drop = FALSE]
+  #dataNormal <- dataGE[as.character(Genelist), , drop = FALSE]
+  if(dataset=='TCGA'){
+    colnames(dataCancer) <- substr(colnames(dataCancer), 1, 12)
+    cfu <- clinical_patient[clinical_patient[, "bcr_patient_barcode"] %in% 
+                              substr(colnames(dataCancer), 1, 12), ]
+  } else {
+    cfu <- clinical_patient[clinical_patient[, "bcr_patient_barcode"] %in% colnames(dataCancer), ]
+  }
   if ("days_to_last_followup" %in% colnames(cfu)) 
     colnames(cfu)[grep("days_to_last_followup", colnames(cfu))] <- "days_to_last_follow_up"
   cfu <- as.data.frame(subset(cfu, select = c("bcr_patient_barcode", 
@@ -59,7 +72,7 @@ TCGAanalyze_SurvivalKM2 <- function (clinical_patient, dataGE, Genelist, Survres
     if (!is.na(mRNAselected_values_ordered)) {
       # Subset the values above and below the quantile thresholds
       numberOfSamples <- length(mRNAselected_values_ordered)
-      mRNA_cuts <- cut(mRNAselected_values_ordered, unique(mRNAselected_cuts), 
+      mRNA_cuts <- cut(as.numeric(mRNAselected_values_ordered), unique(mRNAselected_cuts), 
                        include.lowest = TRUE)
       samples_split_mRNA_selected <- split(names(mRNAselected_values_ordered), mRNA_cuts)
       
