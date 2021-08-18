@@ -180,5 +180,7 @@ TCGAanalyze_SurvivalKM2 <- function (clinical_patient, dataGE, Genelist, Survres
   
     return(tabSurv_c)
   })
+  
+  names(tabSurvKM) <- rownames(dataNormal)
   return(tabSurvKM)
 }
