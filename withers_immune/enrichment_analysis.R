@@ -29,8 +29,11 @@ gseas <- for(infile in list.files(file.path("diffexp"), pattern=".tsv")){
   ## Select the significant genes
   min_expr <- 50 # mean(res$baseMean)
   max_p <- 0.05
-  resSigind = res[ which(res$padj < max_p & res$log2FoldChange > 0 & res$baseMean > min_expr), ]
-  resSigrep = res[ which(res$padj < max_p & res$log2FoldChange < 0 & res$baseMean > min_expr), ]
+  resSigind = res[ which(res$padj < max_p & 
+                           res$log2FoldChange > 0 & 
+                           res$baseMean > min_expr), ]
+  resSigrep = res[ which(res$padj < max_p & 
+                           res$log2FoldChange < 0 & res$baseMean > min_expr), ]
   resSig = rbind(resSigind, resSigrep)
   resFilt <- res[res$baseMean > min_expr,]
   
