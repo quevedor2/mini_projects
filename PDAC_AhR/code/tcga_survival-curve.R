@@ -10,7 +10,6 @@ library(cowplot)
 library(scales)
 library(MASS)
 library(taRifx)
-source("~/git/mini_projects/ST2_IL33/code/TCGAanalyze_SurvivalKM2.R")
 source("~/git/mini_projects/PDAC_AhR/code/functions/TCGAanalyze_SurvivalKM2.R")
 
 PDIR <- '/cluster/projects/mcgahalab/data/mcgahalab/pdac_ahr/tcga'
@@ -81,7 +80,8 @@ survivals <- lapply(projects, function(proj){
   # Run survival analysis and get log-rank p-values
   if(visualize) pdf(file.path(outdir, "survival_curves", paste0(proj, "_skm.pdf")), height=10, width=6)
   skm <- TCGAanalyze_SurvivalKM2(clins[[proj]], log2exprs, names(list.gene), Survresult=TRUE,
-                         threshcuts = c(0.5), caption=proj, p.cut = 1)
+                         threshcuts = c(0.5), caption=proj, p.cut = 1,
+                         add.legend=T, add.pval=T)
   if(visualize) dev.off()
   skm <- as.data.frame(do.call(rbind, skm))
   rownames(skm) <- list.gene

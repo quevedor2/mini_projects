@@ -8,7 +8,7 @@
 
 TCGAanalyze_SurvivalKM2 <- function (clinical_patient, dataGE, Genelist, Survresult = FALSE, 
           threshcuts = c(0.25, 0.5, 0.75), p.cut = 0.05, caption='NULL', add.legend=TRUE,
-          dataset='TCGA', group1, group2) {
+          add.pval=TRUE, dataset='TCGA', group1, group2) {
   require(plotrix)
   TCGAbiolinks:::check_package("survival")
   Genelist <- intersect(rownames(dataGE), as.character(Genelist))
