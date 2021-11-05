@@ -9,12 +9,15 @@
 library(optparse)
 
 option_list <- list( 
-  make_option("--out", default="output.tsv", 
+  make_option(c("-d", "--dir"), default="",
+              help="Directory which houses the individual metaphlan outputs"),
+  make_option(c("-o", "--out"), default="output.tsv", 
               help = "output file name [default \"%default\"]"),
-  make_option("--pattern", default="*s1.tsv$", 
+  make_option(c("-p", "--pattern"), default="*s1.tsv$", 
               help = "Pattern to detect all outputs of metaphlan tsv files [default \"%default\"]")
 )
 opt <- parse_args(OptionParser(option_list=option_list))
+setwd(opt$dir)
 
 # Read in all the metaphlan output files
 files <- list.files(pattern=opt$pattern) #pattern <- "*s1.tsv$"
