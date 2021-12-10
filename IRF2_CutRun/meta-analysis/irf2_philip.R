@@ -11,6 +11,7 @@ library("GO.db")
 library("Category")
 library("GOstats")
 
+library(DESeq2)
 library(JASPAR2020)
 library(TFBSTools)
 library(motifmatchr)
@@ -23,7 +24,7 @@ outdir <- file.path(PDIR, 'results/philip')
 dir.create(outdir, recursive = T, showWarnings = F)
 mouse_goi <- c('Tox', 'Pdcd1', 'Batf', 'Irf2')
 human_goi <- toupper(mouse_goi)
-gbuild <- 'mm9'
+gbuild <- 'hg38'
 human_txdb <- '/cluster/projects/mcgahalab/ref/genomes/human/hg38/GTF/genome.gtf'
 mouse_txdb <- '/cluster/projects/mcgahalab/ref/genomes/mouse/GRCm38/GTF/genome.gtf'
 
@@ -104,7 +105,6 @@ setwd(file.path(PDIR, 'data/philip/human_subset'))
 txdb <- makeTxDbFromGFF(file = human_txdb, format = "gtf")
 
 # Create a reference map of ENSEMBL to SYMBOL
-gbuild <- 'hg38'
 if(gbuild %in% c('GRCh38', 'GRCh37', 'hg19', 'hg38')){
   if(any(gbuild %in% c('hg19', 'GRCh37'))) {
     library(BSgenome.Hsapiens.UCSC.hg37)
@@ -198,6 +198,8 @@ irf2_motif <- setNames(irf2_motif, sapply(pfm_sel, function(i) i@name))
 # Since Philip et al. aggregated on conserved peaks, we can just run one motif search
 motif <- getMotif(peaks[[1]][[1]], pfm, bsgenome)
 
+###############################################
+#### DESeq2 differential abundance testing ####
 # Get the mean peak height for each group
 isolate_peak <- 'promoter'
 peaks_heights <- lapply(peaks, function(peak_grp){
@@ -220,7 +222,8 @@ peaks_heights <- lapply(peaks, function(peak_grp){
 peaks_heights_raw <- lapply(peaks_heights, function(i) i$raw)
 peaks_heights_mean <- sapply(peaks_heights, function(i) i$mean)
 
-# Run DESeq2 on the peak height matrix
+## Assemble a matrix to feed into DESeq
+## and run DESeq2 on the peak height matrix
 peaks_heights_mat <- as.data.frame(as.matrix(do.call(cbind, peaks_heights_raw)))
 peaks_heights_mat <- ceiling(peaks_heights_mat)
 peaks_heights_mat <- cbind(data.frame("gene"=rownames(peaks_heights_mat)),
@@ -228,12 +231,37 @@ peaks_heights_mat <- cbind(data.frame("gene"=rownames(peaks_heights_mat)),
 peaks_meta <- data.frame("id"=colnames(peaks_heights_mat)[-1],
                          "grp"=gsub("_[1-9]$", "", colnames(peaks_heights_mat)[-1]))
 
+# DESeq2 for differential abundance testing
 dds <- DESeqDataSetFromMatrix(countData=peaks_heights_mat, 
                               colData=peaks_meta, 
                               design=~grp, tidy = TRUE)
 dds <- DESeq(dds)
 res <- results(dds)
+res <- lfcShrink(dds, coef="grp_Hum_PD1hi_vs_HN", type="apeglm")
 
+# output the DESEq2 results and volcano plot
+resdf <- as.data.frame(res)
+resdf$gene <- rownames(resdf)
+resdf$log10_padj <- -1*log10(resdf$padj)
+resdf$sig <- resdf$padj < 0.001 & abs(resdf$log2FoldChange) > 2
+resdf$sig <- setNames(c('q<0.001 & log2LFC>2', ''), c('TRUE', 'FALSE'))[as.character(resdf$sig)]
+resdf_sig <- resdf[which(nchar(resdf$sig)>0),]
+
+write.table(resdf, file=file.path(outdir, "DESeq2_dag.tsv"),
+            row.names=T, col.names=T, sep="\t", quote=F)
+
+gp <- ggplot(data=resdf, aes(x=log2FoldChange, y=log10_padj, color=sig)) +
+  geom_point(alpha = 0.6) + 
+  theme_bw() +
+  xlim(-10,10) +
+  geom_text_repel(data=resdf_sig, aes(label=gene))
+pdf(file.path(outdir, "volcano_plot.pdf"))
+gp
+dev.off()
+
+
+########################################################
+#### Gene Set enrichment of the DAGs: JASPAR Motifs ####
 # Assemble GeneSets based on motifs and run GSEA using lfc
 # motif_gs <- lapply(names(motif$pos), function(id){
 motif_gs <- lapply(c(names(motif$pos), 'IRF2'), function(id){
@@ -252,15 +280,34 @@ gse <- GSEA(sort(na.omit(lfc_v), decreasing = T), TERM2GENE = motif_gs,
      pvalueCutoff = 1, maxGSSize=15000)
 gse_df <- as.data.frame(gse)[,1:10]
 rownames(gse_df) <- NULL
-write.table(gse_df, file=file.path(outdir, "GSEA_motifs.tsv"),
-            sep="\t", col.names=T, row.names = F, quote = F)
-gse_df[gse_df$p.adjust < 0.05,]
 
-gg_gsea <- gseaplot2(gse, geneSetID = c(head(gse_df$ID, 5), "IRF2"))
-pdf(file.path(outdir, "gsea_motif.pdf"))
-gg_gsea
+write.table(gse_df[,-c(2)], file=file.path(outdir, "GSEA_jaspar_motifs.tsv"),
+            sep="\t", col.names=T, row.names = F, quote = F)
+# gse_df[gse_df$p.adjust < 0.05,]
+
+pdf(file.path(outdir, "GSEA_jaspar_motifs.pdf"), width = 12)
+gse %>%
+  enrichplot:::barplot.enrichResult(x='NES', showCategory=40) + 
+  theme(text = element_text(size=8),
+        axis.text.y = element_text(size=8))  +
+  xlim(-2,2) + xlab("NES") +
+  ggtitle("Top JASPAR motifs")
+
+  maxval <- max(abs(lfc_v))
+  colors <- c('navyblue', 'lightgrey', 'darkred')
+  b <- c(-ceiling(maxval), 0, ceiling(maxval))
+  gse %>%
+    filter(grepl("IRF2", ID)) %>%
+    heatplot(showCategory=20, foldChange=lfc_v) +
+    theme_bw() +
+    scale_fill_gradientn(limits = c(min(b),max(b)), colors = colors, 
+                         breaks = b, labels = format(b)) +
+    theme(axis.text.x = element_text(angle = 70, vjust = 1, hjust=1))
 dev.off()
 
+
+################################################################
+#### Gene Set enrichment of the IRF2 DAGs: mSigDb Gene Sets ####
 ## Identify the genes that are > X LFC in PD1hi to helathy IRF2 genes
 irf2 <- split(motif_gs, motif_gs$gs_name)[['IRF2']]
 ov_idx <- which(irf2$gene %in% rownames(res))
@@ -270,15 +317,11 @@ lfc_v <- setNames(irf2_lfc$log2FoldChange, rownames(irf2_lfc))
 padj_v <- setNames(irf2_lfc$padj, rownames(irf2_lfc))
 
 irf2_lfc_sig <- irf2_lfc[order(irf2_lfc[,'padj']),]
-irf2_lfc_sig <- irf2_lfc_sig[irf2_lfc_sig$padj < 0.15,]
 write.table(irf2_lfc_sig, file=file.path(outdir, "sig_irf2_genes.tsv"),
             col.names=T, row.names = T, sep="\t", quote = F)
+# irf2_lfc_sig <- irf2_lfc_sig[irf2_lfc_sig$padj < 0.15,]
 
 ## GSEA on the IRF2 LFC using msigdb
-library("org.Hs.eg.db")
-species <- 'Homo sapiens'
-genome <- org.Hs.eg.db
-
 txby <- keys(genome, 'SYMBOL')
 gene_ids <- mapIds(genome, keys=txby, column='ENTREZID',
                    keytype='SYMBOL', multiVals="first")
@@ -288,209 +331,90 @@ names(padj_v) <- gene_ids[names(padj_v)]
 msig_lvls <- list('H'=list(NULL),                       # hallmark gene sets
                   'C2'=list('CP:REACTOME'),             # curated gene sets
                   'C5'=list('GO:BP', 'GO:MF'), # ontology gene sets
-                  'C7'=list('IMMUNESIGDB'),             # immunologic signature gene sets
-                  'C8'=list(NULL))                      # cell type signature gene sets
+                  'C7'=list('IMMUNESIGDB'))             # immunologic signature gene sets
+## Over representation analysis
 ora_gsea <- lapply(names(msig_lvls), function(mlvl){
   sub_ora_gra <- lapply(msig_lvls[[mlvl]], function(sublvl){
     print(paste0(">", mlvl, ":", sublvl, "..."))
-    msig_ds <- msigdbr(species = species, category = mlvl, subcategory = sublvl) %>% 
+    msig_ds <- msigdbr(species = jaspar_species, category = mlvl, subcategory = sublvl) %>% 
       dplyr::select(gs_name, entrez_gene) %>% 
       as.data.frame()
     
     # overrepresentation analysis
     sig_ora <- tryCatch({
-      enricher(gene = na.omit(names(padj_v)[padj_v < 0.05]), TERM2GENE = msig_ds)@result
+      enricher(gene = na.omit(names(padj_v)[padj_v < 0.05]), 
+               TERM2GENE = msig_ds, maxGSSize=2000)@result
     }, error=function(e){NULL})
     sig_ora$ID <- paste0(c(mlvl, sublvl), collapse="-")
     rownames(sig_ora) <- NULL
     
     # GSEA analysis
     msig_gsea <- tryCatch({
-      GSEA(sort(na.omit(lfc_v), decreasing = T), TERM2GENE = msig_ds, pvalueCutoff = 1)
-    })
+      GSEA(sort(na.omit(lfc_v), decreasing = T), TERM2GENE = msig_ds, 
+           pvalueCutoff = 1, maxGSSize = 2000)
+    }, error=function(e){NULL})
     msig_gsea_df <- as.data.frame(msig_gsea)[,1:10]
     msig_gsea_df$ID <- paste0(c(mlvl, sublvl), collapse="-")
     rownames(msig_gsea_df) <- NULL
-    return(list("gsea"=msig_gsea_df[msig_gsea_df$p.adjust<0.15,],
-                "ora"=sig_ora[sig_ora$p.adjust < 0.15,-c(8)]))
+    return(list("gsea"=msig_gsea,
+                "gsea_df"=msig_gsea_df,
+                "ora"=sig_ora,
+                "lfc"=sort(na.omit(lfc_v), decreasing = T)))
   })
 })
 saveRDS(ora_gsea, file=file.path(outdir, "ora_gsea.rds"))
 
 ora_gsea <- unlist(ora_gsea, recursive=F)
-gsea <- do.call(rbind, lapply(ora_gsea, function(i) i$gsea))
+names(ora_gsea) <- unlist(sapply(names(msig_lvls), function(i) paste(i, unlist(msig_lvls[[i]]), sep="_")))
+gsea_df <- do.call(rbind, lapply(ora_gsea, function(i) i$gsea_df))
 ora <- do.call(rbind, lapply(ora_gsea, function(i) i$ora))
-write.table(gsea, file=file.path(outdir, "irf2-gsea.tsv"),
+write.table(gsea_df, file=file.path(outdir, "irf2-gsea.tsv"),
             col.names=T, row.names = F, quote = F, sep="\t")
 write.table(ora, file=file.path(outdir, "irf2-ora.tsv"),
             col.names=T, row.names = F, quote = F, sep="\t")
 
 
 
-
-
-
-
-########################################################################
-
-# Calculate enrichment score for each motif
-gene_list = sort(gene_list, decreasing = TRUE)
-
-gseGO
-GSEA(gene_list, TERM2GENE = msig_gs)
-TERM2GENE
-
-
-motif_diff <- as.data.frame(sapply(motifs, function(i) sapply(i$pos, length)))
-naive_idx <- grep("HN", colnames(motif_diff))
-motif_diff$N <- rowMeans(motif_diff[,naive_idx]) 
-motif_diff$T <- rowMeans(motif_diff[,-naive_idx]) 
-motif_diff$delta_frac <- motif_diff$delta / rowMeans(motif_diff[,naive_idx])
-motif_diff <- motif_diff[order(motif_diff$delta_frac),]
-
-#######################################################
-#### Differential genes associated with IRF2 peaks ####
-library(msigdbr)
-
-# Load in msigdb gene sets
-msig_hallmark <- msigdbr(species = jaspar_species, category = "H") %>% 
-  dplyr::select(gs_name, entrez_gene) %>% 
-  as.data.frame()
-msig_immune <- msigdbr(species = jaspar_species, category = "C7") %>% 
-  dplyr::select(gs_name, entrez_gene) %>% 
-  as.data.frame()
-
-txby <- keys(genome, 'ENSEMBL')
-ens2ent <- mapIds(genome, keys=txby, column='ENTREZID',
-                   keytype='ENSEMBL', multiVals="first")
-txby <- keys(genome, 'ENTREZID')
-ent2sym <- mapIds(genome, keys=txby, column='SYMBOL',
-                   keytype='ENTREZID', multiVals="first")
-
-irf2_genes <- lapply(motifs, function(m){
-  m_gr <- m$pos[[names(irf2_motif)]]
-  promoter_idx <- grep("Promoter.*1kb", m_gr$annotation)
-  ens2ent[unique(m_gr[promoter_idx,]$geneId)]
+pdf(file.path(outdir, "GSEA_irf2_msigdb.pdf"), width = 11)
+lapply(names(ora_gsea), function(id){
+  gse <- ora_gsea[[id]]$gsea
+  
+  ggp <- gse %>%
+    enrichplot:::barplot.enrichResult(x='NES', showCategory=40) + 
+    theme(text = element_text(size=8),
+          axis.text.y = element_text(size=8))  +
+    xlim(-4,4) + xlab("NES") +
+    scale_fill_gradient(trans = "log", low = "light green",  high = "black", 
+                        breaks = c(0, 0.001, 0.05, 1)) +
+    ggtitle(paste0("IRF2: ", id))
+  print(ggp)
+  NULL
 })
-
-
-comp_groups <- list("Acute27-8"=c('AcuteD27', 'AcuteD8'),
-                    "Acute8-N"=c('AcuteD8', 'Naive'),
-                    "Chronic27-8"=c('ChronicD27', 'Chronic8'),
-                    "Chronic8-N"=c('ChronicD8', 'Naive'),
-                    'Naive'=c('Naive'))
-
-msig_gs <- msig_hallmark
-# msig_gs <- msig_immune
-topx <- 10
-ggp_enrs <- lapply(list('hallmark'=msig_hallmark, 'immune'=msig_immune), function(msig_gs){
-  enrs <- lapply(comp_groups, function(grp){
-    print(paste(grp, collapse="-"))
-    grp1 <- irf2_genes[[grp[1]]]
-    ## Calculate genes in gene-set-1 but not gene-set-2 (Gain) and vice versa (lost)
-    if(length(grp)>1) {
-      grp2 <- irf2_genes[[grp[2]]]
-      gene_set_gained <- setdiff(grp1, grp2)
-      gene_set_lost <- setdiff(grp2, grp1)
-    } else {
-      gene_set_gained <- grp1
-      gene_set_lost <- c()
-    }
-    stat <- if(length(gene_set_lost)>0) TRUE else FALSE
-    
-    ## Do enrichment analysis using msigdb geneset
-    gain_enr <- enricher(gene = gene_set_gained, TERM2GENE = msig_gs)@result
-    if(stat) lost_enr <- enricher(gene = gene_set_lost, TERM2GENE = msig_gs)@result
-    
-    ## Convert the entrezID in msigdb geneset to Symbol
-    convert_ent2sym <- function(genes){
-      sapply(genes, function(i){
-        paste(ent2sym[strsplit(i, split = "\\/")[[1]]], collapse=",")
-      })
-    }
-    gain_enr$geneID <- convert_ent2sym(gain_enr$geneID)
-    if(stat) lost_enr$geneID <- convert_ent2sym(lost_enr$geneID)
-    
-    ## Subset the top X or q<0.15
-    gain_enr <- if(topx>0) head(gain_enr, 25) else gain_enr[gain_enr$p.adjust < 0.15,]
-    if(stat) lost_enr <- if(topx>0) head(lost_enr, 25) else lost_enr[lost_enr$p.adjust < 0.15,]
-    
-    gain_enr$stat <- "GAIN"
-    if(stat) lost_enr$stat <- "LOST"
-    if(!stat) lost_enr <- NULL
-    return(list("gained"=gain_enr, "lost"=lost_enr, 
-                'gene_gain'=gene_set_gained, 'gene_lost'=gene_set_lost))
-  })
-  
-  ## Bind all the separate dataframes into one single dataframe
-  enrs_m <- lapply(names(enrs), function(id){ 
-    enr <- enrs[[id]]
-    enr_m <- do.call(rbind, enr[c(1:2)])
-    enr_m$ID <- id
-    enr_m
-  })
-  enrs_m <- do.call(rbind, enrs_m)
-  enrs_m$qvalue[which(enrs_m$qvalue < (1*10^-10))] <- (1*10^-10)
-  
-  ## Do the plotties
-  ggp <- ggplot(enrs_m, aes(x=ID, y=Description, color=stat)) +
-    geom_point(aes(size = abs(log10(qvalue)))) + 
-    theme_minimal() +
-    theme(axis.text.y = element_text(size=7),
-          axis.text.x = element_text(size=7, angle=90))
-  
-  return(list("gg"=ggp, "enr"=enrs))
-})
-
-## Plot the enrichment analysis of msigdb for IRF2 accessible genes
-pdf(file.path('~/xfer', "immune_enr.pdf"), width = 12, height = 13)
-lapply(ggp_enrs, function(i) i$gg)
 dev.off()
 
-#############################################
-#### Counts of IRF2 genes longitudinally ####
-## Plot the change in number of genes for the IRF2 accessible genes for N->D8->D27
-library(VennDiagram)
-## Chronic LCMV
-blank_out <- list(NULL,
-                  c('ChronicD27'),
-                  c('ChronicD27', 'ChronicD8'))
-samples <- c('Naive', 'ChronicD8', 'ChronicD27')
-venn_cnts <- getVennCnts(blank_out, irf2_genes, samples)
-rownames(venn_cnts) <- c('D27o', 'D8o', 'D27nD8', 'No', 'D27nN', 'D8nN', 'All')
-colnames(venn_cnts) <- c('D27', 'D8', 'N')
-venn_cnts <- venn_cnts[-match('D27nN', rownames(venn_cnts)),]
-
-# Blank out -only- counts
-venn_cnts_bo <- venn_cnts
-for(id in colnames(venn_cnts)){
-  venn_cnts_bo[grep(paste0(id, "|All"), rownames(venn_cnts_bo), invert=T), id] <- 0
-}
-
-ggchronic <- lapply(list("all"=venn_cnts, "bo"=venn_cnts_bo), ggVennCnt, title='Chronic')
-
-
-## Acute LCMV
-blank_out <- list(NULL,
-                  c('AcuteD27'),
-                  c('AcuteD27', 'AcuteD8'))
-samples <- c('Naive', 'AcuteD8', 'AcuteD27')
-venn_cnts <- getVennCnts(blank_out, irf2_genes, samples)
-rownames(venn_cnts) <- c('D27o', 'D8o', 'D27nD8', 'No', 'D27nN', 'D8nN', 'All')
-colnames(venn_cnts) <- c('D27', 'D8', 'N')
-venn_cnts <- venn_cnts[-match('D27nN', rownames(venn_cnts)),]
-
-# Blank out -only- counts
-venn_cnts_bo <- venn_cnts
-for(id in colnames(venn_cnts)){
-  venn_cnts_bo[grep(paste0(id, "|All"), rownames(venn_cnts_bo), invert=T), id] <- 0
-}
-
-ggacute <- lapply(list("all"=venn_cnts, "bo"=venn_cnts_bo), ggVennCnt, title='Acute')
-
-pdf(file.path("~/xfer", "irf2_gene_counts.pdf"))
-ggchronic
-ggacute
+pdf(file.path(outdir, "GSEA_irf2_msigdb_heatmap.pdf"), width = 20, height = 5)
+lapply(names(ora_gsea), function(id){
+  gse <- ora_gsea[[id]]$gsea
+  lfc_v <- ora_gsea[[id]]$lfc
+  gsex <- setReadable(gse, 'org.Hs.eg.db', 'ENTREZID')
+  maxval <- max(abs(lfc_v))
+  colors <- c('navyblue', 'lightgrey', 'darkred')
+  b <- c(-ceiling(maxval), 0, ceiling(maxval))
+  ggp <- tryCatch({
+    gsex %>%
+    filter(p.adjust < 0.15) %>%
+    heatplot(showCategory=10, foldChange=lfc_v) +
+    theme_bw() + 
+      ggtitle(paste0("Top 10 IRF2: ", id, " (padj < 0.15)")) +
+    scale_fill_gradientn(limits = c(min(b),max(b)), colors = colors, 
+                         breaks = b, labels = format(b)) +
+    theme(axis.text.x = element_text(angle = 70, vjust = 1, hjust=1))
+  }, error=function(e){NULL})
+  print(ggp)
+  NULL
+})
 dev.off()
+
+
 
 

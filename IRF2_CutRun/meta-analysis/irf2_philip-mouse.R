@@ -232,11 +232,13 @@ peaks_heights_mat <- cbind(data.frame("gene"=rownames(peaks_heights_mat)),
 peaks_meta <- data.frame("id"=colnames(peaks_heights_mat)[-1],
                          "grp"=gsub("_?[1-9]$", "", colnames(peaks_heights_mat)[-1]))
 
+peaks_meta$grp <- factor(as.character(peaks_meta$grp), levels=c('N', 'L7', 'L28'))
+peaks_meta <- peaks_meta[order(peaks_meta$grp),]
 dds <- DESeqDataSetFromMatrix(countData=peaks_heights_mat, 
                               colData=peaks_meta, 
                               design=~grp, tidy = TRUE)
 dds <- DESeq(dds)
-res <- lapply(resultsNames(dds)[-1], function(conditions){
+resl <- lapply(resultsNames(dds)[-1], function(conditions){
   lfcShrink(dds, coef = conditions, type = 'normal', res = res)
 })
 
@@ -250,21 +252,29 @@ motif_gs <- unique(motif_gs)
 
 # Gene set enrichment to identify up/downregulated motifs between PD1Hi and healthy
 # lfc_v <- setNames(as.numeric(unlist(lfc[,1])), rownames(lfc))
-lfc_v <- setNames(as.numeric(res$log2FoldChange), rownames(res))
-dup_idx <- duplicated(names(lfc_v))
-if(any(dup_idx)) lfc_v <- lfc_v[-which(dup_idx)]
-if(any(is.infinite(lfc_v))) lfc_v[is.infinite(lfc_v)] <- max(lfc_v[-which(is.infinite(lfc_v))])
-gse <- GSEA(sort(na.omit(lfc_v), decreasing = T), TERM2GENE = motif_gs, 
-     pvalueCutoff = 1, maxGSSize=15000)
-gse_df <- as.data.frame(gse)[,1:10]
-rownames(gse_df) <- NULL
-write.table(gse_df, file=file.path(outdir, "GSEA_motifs.tsv"),
-            sep="\t", col.names=T, row.names = F, quote = F)
-gse_df[gse_df$p.adjust < 0.05,]
+gsel <- lapply(resl, function(res){
+  ids <- gsub("^.*grp ", "", res@elementMetadata$description[2]) %>% gsub(" ", "_", .)
+  
+  lfc_v <- setNames(as.numeric(res$log2FoldChange), rownames(res))
+  dup_idx <- duplicated(names(lfc_v))
+  if(any(dup_idx)) lfc_v <- lfc_v[-which(dup_idx)]
+  if(any(is.infinite(lfc_v))) lfc_v[is.infinite(lfc_v)] <- max(lfc_v[-which(is.infinite(lfc_v))])
+  gse <- GSEA(sort(na.omit(lfc_v), decreasing = T), TERM2GENE = motif_gs, 
+              pvalueCutoff = 1, maxGSSize=15000)
+  gse_df <- as.data.frame(gse)[,1:10]
+  rownames(gse_df) <- NULL
+  
+  write.table(gse_df, file=file.path(outdir, paste0("GSEA_motifs.", ids, ".tsv")),
+              sep="\t", col.names=T, row.names = F, quote = F)
+  return(list("gse"=gse, "df"=gse_df))
+})
 
-gg_gsea <- gseaplot2(gse, geneSetID = c(head(gse_df$ID, 5), "IRF2"))
+
 pdf(file.path(outdir, "gsea_motif.pdf"))
-gg_gsea
+lapply(gsel, function(gse){
+  gg_gsea <- gseaplot2(gse, geneSetID = c(head(gse_df$ID, 5), "IRF2"))
+  print(gg_gsea)
+})
 dev.off()
 
 ## Identify the genes that are > X LFC in PD1hi to helathy IRF2 genes
