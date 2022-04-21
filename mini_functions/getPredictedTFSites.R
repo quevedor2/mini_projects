@@ -10,12 +10,18 @@ library(JASPAR2020)
 library(TFBSTools)
 library(motifmatchr)
 
+## Set motif of interest on line 66 ##
 
 gbuild <- 'mm10'
 human_txdb <- '/cluster/projects/mcgahalab/ref/genomes/human/hg38/GTF/genome.gtf'
 mouse_txdb <- '/cluster/projects/mcgahalab/ref/genomes/mouse/GRCm38/GTF/genome.gtf'
 motif_dir <- '/cluster/projects/mcgahalab/ref/tf/JASPAR2020'
-motif_interest <- setNames('MA0051.1', 'IRF2')
+motifs <- list("IRF2"=c('Mus musculus'='MA0051.1', 'Homo sapiens'='MA0051.1'),
+               "IRF1"=c('Mus musculus'='MA0050.2', 'Homo sapiens'='MA0050.2'),
+               'IRF4'=c('Mus musculus'='MA1419.1', 'Homo sapiens'='MA1419.1'),
+               'IRF8'=c('Mus musculus'='MA0652.1', 'Homo sapiens'='MA0652.1'),
+               'STAT1'=c('Mus musculus'='MA0137.1', 'Homo sapiens'='MA0137.1'))
+
 
 ########################
 #### Reference Data ####
@@ -57,6 +63,10 @@ gene_ids <- mapIds(genome, keys=txby, column='SYMBOL',
 
 ######################################
 #### Get all predicted IRF2 sites ####
+idx <- 5 # Set Motif of interest
+motif_interest <- setNames(motifs[[idx]][jaspar_species],
+                           names(motifs)[idx]) 
+
 ## get unique genes
 genes <- ChIPseeker:::getGene(txdb, 'gene')
 tss <- ifelse(strand(genes) == "+", start(genes), end(genes))
@@ -72,8 +82,12 @@ if(is.null(motif_interest)){
 } else {
   pfm <- getMatrixSet(x = JASPAR2020,
                       opts = list(collection = "CORE", ID=motif_interest))
+  if(length(pfm) == 0){
+    pfm <- getMatrixSet(x = JASPAR2020,
+                        opts = list(collection = "CORE", name=names(motif_interest)))
+    motif_interest <- setNames(names(pfm), names(motifs)[idx])
+  }
 }
-
 
 # get promoters
 dtss <- 3000

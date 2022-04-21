@@ -67,6 +67,44 @@ iterateMsigdb <- function(species, msig_lvls=NULL, fun, ...){
   return(msig_obj)
 }
 
+#' GSEA Wrapper function
+#' @description  GSEA wrapper function to insert as the function for 
+#' iterateMsigdb()
+#' 
+#' @param msig_ds parameter passed in via iterateMsigdb()
+#' @param lfc_v vector of log-fold change values 
+#'
+#' @examples
+#' lfc_v <- setNames(reslfc$log2FoldChange, reslfc$entrez)
+#' gseas <- iterateMsigdb(species=species, fun=gseaFun, 
+#'                        lfc_v=lfc_v)
+gseaFun <- function(msig_ds, lfc_v){
+  gsea <- tryCatch({
+    GSEA(sort(na.omit(lfc_v), decreasing = T), 
+         TERM2GENE = msig_ds, pvalueCutoff = 1)
+  }, error=function(e){NULL})
+  return(gsea)
+}
+
+#' Gene-set Enrichment Wrapper function
+#' @description  GO wrapper function to insert as the function for 
+#' iterateMsigdb()
+#'
+#' @param msig_ds parameter passed in via iterateMsigdb()
+#' @param entrez_genes vector of entrez-id genes
+#'
+#' @examples
+#' oras <- iterateMsigdb(species='Mus musculus', fun=oraFun, 
+#' entrez_genes=module_genes$entrez)
+#' oras <- lapply(oras, summarizeOra, keep_genes=TRUE)
+oraFun <- function(msig_ds, entrez_genes){
+  require(clusterProfiler)
+  # overrepresentation analysis
+  sig_ora <- tryCatch({
+    enricher(gene = na.omit(entrez_genes), TERM2GENE = msig_ds)@result
+  }, error=function(e){NULL})
+  return(sig_ora)
+}
 
 #' summarizeOra
 #' @description Takes a list of ORA analysis from enricher
