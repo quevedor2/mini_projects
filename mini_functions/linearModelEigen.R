@@ -21,7 +21,7 @@ linearModelEigen <- function(eigen, design_mat){
   fit <- limma::eBayes(fit) # Apply empirical Bayes to smooth standard errors
   
   ## Apply multiple testing correction and obtain stats
-  stats_df <- limma::topTable(fit, number = ncol(eigen)) %>%
+  stats_df <- limma::topTable(fit, number = nrow(eigen)) %>%
     tibble::rownames_to_column("module")
   return(stats_df)
 }
