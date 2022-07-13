@@ -93,7 +93,10 @@ if(is.null(motif_interest)){
 dtss <- 3000
 chrs <- GRanges(seqinfo(bsgenome))
 chrs <- keepStandardChromosomes(chrs, pruning.mode='coarse')
-promoter <- getPromoters(TxDb=txdb, upstream=dtss, downstream=dtss)
+promoter <- promoters(x=genes(txdb), upstream=dtss, downstream=dtss) %>%  
+  sort %>%
+  keepStandardChromosomes(., pruning.mode='coarse')
+seqlevelsStyle(promoter) <- 'UCSC'
 
 # motif inference from JASPAR2020
 motif_ix <- matchMotifs(pwms = pfm,
@@ -104,7 +107,14 @@ motif_ix <- matchMotifs(pwms = pfm,
                         genome = bsgenome)
 motif <- sort(motif_ix[[1]])
 
+# Intersect motif with promoter (Not Saved)
+ov_idx <- findOverlaps(promoter, motif)
+uniq_idx <- which(!duplicated(queryHits(ov_idx)))
+promoter$motif <- FALSE
+promoter$motif[queryHits(ov_idx)] <- TRUE
 
+
+# Print out all motifs
 motif_df <- as.data.frame(motif)[,-4]
 motif_df[,4] <- "."
 write.table(motif_df, file=file.path(motif_dir, paste0(names(motif_interest), "_", motif_interest, ".", gbuild, ".genome.bed")),

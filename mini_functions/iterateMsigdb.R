@@ -47,19 +47,31 @@ iterateMsigdb <- function(species, msig_lvls=NULL, fun, ...){
   
   
   msig_obj <- lapply(names(msig_lvls), function(mlvl){
-    sub_obj <- lapply(msig_lvls[[mlvl]], function(sublvl){
-      print(paste0(">", mlvl, ":", sublvl, "..."))
-      msig_ds <- msigdbr(species = species, category = mlvl, subcategory = sublvl) %>%
-        dplyr::select(gs_name, entrez_gene) %>%
-        as.data.frame()
-      
-      # overrepresentation analysis
-      obj <- fun(msig_ds=msig_ds, ...)
-      return(obj)
-    })
-    ids <- unlist(msig_lvls[[mlvl]])
-    ids <- if(is.null(ids)) 'base' else ids
-    names(sub_obj) <- ids
+    if(mlvl == 'custom'){
+      sub_obj <- lapply(names(msig_lvls[[mlvl]]), function(sublvl){
+        msig_ds <- data.frame("gs_name"=sublvl,
+                              "entrez_gene"=msig_lvls[[mlvl]][[sublvl]])
+        
+        obj <- fun(msig_ds=msig_ds, ...)
+        return(obj)
+      })
+      names(sub_obj) <- names(msig_lvls[[mlvl]])
+    } else {
+      sub_obj <- lapply(msig_lvls[[mlvl]], function(sublvl){
+        print(paste0(">", mlvl, ":", sublvl, "..."))
+        msig_ds <- msigdbr(species = species, category = 'H', subcategory = NULL) %>%
+          dplyr::select(gs_name, entrez_gene) %>%
+          as.data.frame()
+        
+        # overrepresentation analysis
+        obj <- fun(msig_ds=msig_ds, ...)
+        return(obj)
+      })
+      ids <- unlist(msig_lvls[[mlvl]])
+      ids <- if(is.null(ids)) 'base' else ids
+      names(sub_obj) <- ids
+    }
+    
     return(sub_obj)
   })
   names(msig_obj) <- names(msig_lvls)

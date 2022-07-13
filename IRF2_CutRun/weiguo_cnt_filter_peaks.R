@@ -127,17 +127,17 @@ ens2entrez_ids <- mapIds(genome, keys=txby, column='ENTREZID',
 entrez2ens_ids <- setNames(names(ens2entrez_ids), ens2entrez_ids)
 
 # Read in IRF2 motif matrix
-gr_motifs <- lapply(list.files(motif_dir, pattern="bed"), function(f){
+gr_motifs <- lapply(list.files(motif_dir, pattern=".bed"), function(f){
   motif <- setNames(read.table(file.path(motif_dir, f), sep="\t", check.names = F),
                     c("chr", "start", "end", "strand", "sig")) %>%
     makeGRangesFromDataFrame(., keep.extra.columns = T)
   seqlevelsStyle(motif) <- 'UCSC'
   motif
 })
-names(gr_motifs) <- gsub("_.*", "", list.files(motif_dir, pattern="bed"))
+names(gr_motifs) <- gsub("_.*", "", list.files(motif_dir, pattern=".bed"))
 
 # Generate Cut&Run peak catalogue
-cnr_catalogue <- sapply(list.files(peaks_dir, pattern="bed"), function(pfile){
+cnr_catalogue <- sapply(list.files(peaks_dir, pattern=".stringent.bed"), function(pfile){
   readPeak(file.path(peaks_dir, pfile),
            ext_range=ext_range)
 })
@@ -166,8 +166,9 @@ motifs_ov <- lapply(gr_motifs, findOverlaps, query=cnr_catalogue)
 irf2_cat_ov <- motifs_ov$IRF2
 
 # Create listing of TARGET - CONTROL pair of files
-f_pairs <- list.files(peaks_dir, pattern="bed")
-f_grps <- gsub("_[a-zA-Z0-9]*\\..*", "", f_pairs)
+f_pairs <- list.files(peaks_dir, pattern=".stringent.bed")
+f_grps <- gsub("_[a-zA-Z0-9]*\\..*", "", f_pairs) %>%
+  gsub("_IRF2.*", "", .)
 f_pairs <- split(f_pairs, f_grps)
 f_pairs <- lapply(f_pairs, function(fp){
   data.frame("target"=grep("igg", fp, ignore.case = T, invert = T, value = T)) %>%
@@ -180,7 +181,7 @@ rownames(f_pairs) <- gsub(".stringent.*", "", f_pairs$target)
 
 ###################################
 #### 1. IRF2 Overlapping Peaks ####
-dist <- sapply(list.files(peaks_dir, pattern="bed"), function(pfile){
+dist <- sapply(list.files(peaks_dir, pattern=".stringent.bed"), function(pfile){
   grpeak <- readPeak(file.path(peaks_dir, pfile),
                      ext_range=ext_range)
   
@@ -201,6 +202,7 @@ mdist2 <- melt(dist2) %>%
          group = gsub("^.*_", "", sample),
          marker = gsub("(.*_.*)_.*", "\\1", sample))
 mdist2$signalAUC_percentile <- as.numeric(as.character(mdist2$signalAUC_percentile))
+mdist2$group <- gsub("-44$", "", mdist2$group)
 pdf("~/xfer/irf2_motif_peak.all.pdf", width = 10)
 ggplot(mdist2, aes(x=signalAUC_percentile, IRF2_proportion, color=marker, group=sample)) +
   geom_line() + 
@@ -212,7 +214,7 @@ dev.off()
 ############################################
 #### 2. Cosine similarity between peaks ####
 # Fill in the Signal matrix for all instances of the Peaks catalogue
-signal_mat <- sapply(list.files(peaks_dir, pattern="bed"), function(pfile){
+signal_mat <- sapply(list.files(peaks_dir, pattern=".stringent.bed"), function(pfile){
   gr0 <- readPeak(file.path(peaks_dir, pfile), ext_range = 0)
   
   setNames(read.table(file.path(peaks_dir, pfile), sep="\t"),
@@ -261,7 +263,7 @@ melt_sims <- melt(sim_mats) %>%
                      "percentile", "target", "sample")) %>% 
   filter(., as.numeric(cosine_similarity) < 0.99)
 melt_sims$percentile <- as.numeric(as.character(melt_sims$percentile)) 
-pdf("~/xfer/test.pdf", height = 12)
+pdf("~/xfer/irf2_sim_matrix.pdf", height = 12)
 ggplot(melt_sims, aes(x=percentile, y=cosine_similarity, 
                       group=sample_j, col=target, linetype=sample)) +
   facet_grid(rows=vars(sample_i), scales="free") +
@@ -290,8 +292,10 @@ irf2_props <- apply(f_pairs, 1, function(pfiles){
   
   # Populate the target-control signal matrix
   if(file.exists(file.path(outdir, "rds", targctrl_rds))){
+    print("Reading in existing target-cotnrol signal matrix...")
     targ_ctrl_df <- readRDS(file.path(outdir, "rds", targctrl_rds))
   } else {
+    print("Populating target-control signal matrix...")
     targ_ctrl_df <- populateCatalogue(cnr_catalogue, motifs_ov, gr_target, gr_ctrl)
     saveRDS(targ_ctrl_df, file.path(outdir, "rds", targctrl_rds))
   }
@@ -508,7 +512,8 @@ dev.off()
 #####################################
 #### 5. Refining confident peaks ####
 thresholds <- list("Act_unfixed_IRF2"=c("target"=0.69, "control"=0.86),
-                   "Act_unfixed_H3K4me3"=c("target"=0.54, "control"=0.87))
+                   "Act_unfixed_H3K4me3"=c("target"=0.54, "control"=0.87),
+                   "CnT_Act_IRF2-44"=c('target'=0.985, 'control'=0.87))
 # thresholds <- setNames(c(0.985, 0.985, 0.915), 
 #                        paste0("Act_unfixed_", c("IRF2", "H3K4me3", "IgG"), ".stringent.bed"))
 grs_anno <- apply(f_pairs[names(thresholds),,drop=F], 1, function(pfiles){
