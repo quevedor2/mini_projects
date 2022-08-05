@@ -59,7 +59,7 @@ iterateMsigdb <- function(species, msig_lvls=NULL, fun, ...){
     } else {
       sub_obj <- lapply(msig_lvls[[mlvl]], function(sublvl){
         print(paste0(">", mlvl, ":", sublvl, "..."))
-        msig_ds <- msigdbr(species = species, category = 'H', subcategory = NULL) %>%
+        msig_ds <- msigdbr(species = species, category = mlvl, subcategory = sublvl) %>%
           dplyr::select(gs_name, entrez_gene) %>%
           as.data.frame()
         
