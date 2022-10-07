@@ -118,6 +118,30 @@ oraFun <- function(msig_ds, entrez_genes){
   return(sig_ora)
 }
 
+#' ssGSEA Wrapper function
+#' @description  ssGSEA wrapper function to insert as the function for 
+#' iterateMsigdb()
+#' 
+#' @param msig_ds parameter passed in via iterateMsigdb()
+#' @param lfc_v matrix of expression with genes in entrez-id form
+#' in the rows and samples in the column
+#'
+#' @examples
+#' tcnts <- as.data.frame(assay(counts))
+#' rownames(tcnts) <- ens2entrez_ids[rownames(tcnts)]
+#' ssgseas <- iterateMsigdb(species=species, fun=ssGseaFun, 
+#'                          lfc_v=tcnts,  msig_lvls = list('H'=list(NULL)))
+ssGseaFun <- function(msig_ds, lfc_v, ss_method='ssgsea'){
+  require(GSVA)
+  ssgsea <- tryCatch({
+    sig_ens_gs <- split(setNames(msig_ds$entrez_gene, msig_ds$entrez_gene), 
+                        f=msig_ds$gs_name)
+    gsva(lfc_v, sig_ens_gs, verbose=FALSE, method=ss_method)
+  }, error=function(e){NULL})
+  return(ssgsea)
+}
+
+
 #' summarizeOra
 #' @description Takes a list of ORA analysis from enricher
 #' using the msigdb database, adn reduces it to a cleaned up
