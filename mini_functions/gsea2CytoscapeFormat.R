@@ -9,7 +9,7 @@ gsea2CytoscapeFormat <- function(dat, gs_map, ...){
   
   dat <- dat %>% 
     mutate(Details=gs_map[ID]) %>%
-    select(ID, Description, Details, setSize, enrichmentScore, NES, pvalue,
+    dplyr::select(ID, Description, Details, setSize, enrichmentScore, NES, pvalue,
            p.adjust, qvalues, rank, leading_edge) %>%
     rename_with(., ~c('NAME', 'GS.br..follow.link.to.MSigDB', 'GS.DETAILS', 
                       'SIZE', 'ES', 'NES', 'NOM.p.val', 'FDR.q.val', 
@@ -39,7 +39,8 @@ gsea2CytoscapeFormat <- function(dat, gs_map, ...){
       print(paste0(">", mlvl, ":", sublvl, "..."))
       msig_ds <- msigdbr(species = species, category = mlvl, subcategory = sublvl) %>% 
         as.data.frame %>%
-        select(gs_name, gs_exact_source) %>% unique
+        dplyr::select(gs_name, gs_exact_source) %>% 
+        unique
       with(msig_ds, setNames(gs_exact_source, gs_name))
     })
   }) %>% unlist %>% 
