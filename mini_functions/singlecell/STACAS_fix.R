@@ -101,8 +101,10 @@ make.reference <- function (ref, assay = NULL, atlas.name = "custom_reference",
       stop("Unsupported UMAP method.")
     }
   }
-  names(ref@assays)[names(ref@assays) == assay] = "integrated"
-  DefaultAssay(ref) <- "integrated"
+  
+  ## ref <- RenameAssays(object = ref, mnn.reconstructed = 'integrated')
+  # names(ref@assays)[names(ref@assays) == assay] = "integrated"
+  # DefaultAssay(ref) <- "integrated"
   if (!annotation.column == "functional.cluster") {
     ref$functional.cluster <- ref@meta.data[, annotation.column]
   }
