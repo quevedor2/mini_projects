@@ -63,9 +63,12 @@ make.reference <- function (ref, assay = NULL, atlas.name = "custom_reference",
     varfeat <- ref@assays[[assay]]@var.features
   }
   
-  ref <- ScaleData(ref) %>% 
-    RunPCA(., npcs = ndim, assay = assay, verbose = FALSE)
-  ref <- .makeprcomp_obj(ref)
+  ref <- ScaleData(ref, features=varfeat) %>% 
+    RunPCA(., features=varfeat, npcs = ndim, assay = assay, verbose = FALSE)
+  ref <- .makeprcomp_obj(ref, varfeat)
+  pca.obj <- ref@misc$pca_object
+  table(names(pca.obj$center) %in% rownames(pca.obj$rotation))
+  
   # ref <- ProjecTILs:::prcomp.seurat(ref, ndim = ndim, assay = assay)
   if (!recalculate.umap) {
     if (dimred %in% names(ref@reductions)) {
@@ -122,12 +125,14 @@ make.reference <- function (ref, assay = NULL, atlas.name = "custom_reference",
 ## I recreated  a prcomp object using the values extracted from the 
 ## RunPCA() seurat function, and then use the base::stats scale() function
 ## to estimate the scale and cen values
-.makeprcomp_obj <- function(obj){
+.makeprcomp_obj <- function(obj, varfeat){
   assay <- DefaultAssay(obj)
-  varfeat <- VariableFeatures(obj)
-  refdata <- data.frame(t(as.matrix(obj@assays[[assay]]@data[varfeat, ])))
-  refdata <- refdata[, sort(colnames(refdata))]
-  scx <- scale(refdata, center = TRUE, scale = TRUE)
+  # varfeat <- VariableFeatures(obj)
+  scx <- data.frame(t(as.matrix(obj@assays[[assay]]@data[varfeat, ])),
+                    check.names = F) %>%
+    scale(., center=T, scale=T)
+  # refdata <- refdata[, sort(colnames(refdata))]
+  # scx <- scale(refdata, center = TRUE, scale = TRUE)
   cen <- attr(scx, "scaled:center")
   sc <- attr(scx, "scaled:scale")
   
