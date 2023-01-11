@@ -65,6 +65,7 @@ make.reference <- function (ref, assay = NULL, atlas.name = "custom_reference",
   
   ref <- ScaleData(ref) %>% 
     RunPCA(., npcs = ndim, assay = assay, verbose = FALSE)
+  ref <- .makeprcomp_obj(ref)
   # ref <- ProjecTILs:::prcomp.seurat(ref, ndim = ndim, assay = assay)
   if (!recalculate.umap) {
     if (dimred %in% names(ref@reductions)) {
@@ -112,6 +113,31 @@ make.reference <- function (ref, assay = NULL, atlas.name = "custom_reference",
 }
 
 
+## The STACAS object requires a prcomp class object in the obj@misc$pca_object 
+## slot for ProjecTILs integration. This object is not generated in the 
+## RunPCA() function of seurat, but it can be recreated manually. Based
+## on the prcomp() code https://github.com/SurajGupta/r-source/blob/master/src/library/stats/R/prcomp.R,
+## I recreated  a prcomp object using the values extracted from the 
+## RunPCA() seurat function, and then use the base::stats scale() function
+## to estimate the scale and cen values
+.makeprcomp_obj <- function(obj){
+  assay <- DefaultAssay(obj)
+  varfeat <- VariableFeatures(obj)
+  refdata <- data.frame(t(as.matrix(obj@assays[[assay]]@data[varfeat, ])))
+  refdata <- refdata[, sort(colnames(refdata))]
+  scx <- scale(refdata, center = TRUE, scale = TRUE)
+  cen <- attr(scx, "scaled:center")
+  sc <- attr(scx, "scaled:scale")
+  
+  r <- list(x=obj@reductions$pca@cell.embeddings,
+            sdev=obj@reductions$pca@stdev, #sdev = s$d, 
+            rotation=obj@reductions$pca@feature.loadings, #rotation = s$v,
+            center = cen, #if(is.null(cen)) FALSE else cen,
+            scale = sc) #if(is.null(sc)) FALSE else sc)
+  class(r) <- "prcomp"
+  obj@misc$pca_object <- r
+  return(obj)
+}
 
 # prcomp.seurat <- function (obj, assay = NULL, ndim = 10, scale = TRUE)  { 
 #   if (is.null(assay)) {
