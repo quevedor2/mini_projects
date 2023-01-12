@@ -86,6 +86,21 @@ getNumOfPcs <- function(seu, min_var=0.9){
   return(max_pcs)
 }
 
+##-- Helper Functions ----
+# Used to subset a seurat object to a set number of cells. It will take
+# a seurat object, split it apart based on a metadata colid, and then
+# select up to n number of cells per list element and return the
+# the subsetted object
+subsetSeu <- function(obj, colid='dataset_celltype', n=1000, seed=1234){
+  set.seed(1234)
+  obj.l <- lapply(SplitObject(obj, split.by=colid) , function(obj.i){
+    s <- min(c(n, ncol(obj.i)))
+    obj.i[, sample(colnames(obj.i), size =s, replace=F)]
+  })
+  obj2 <- subset(obj, cells=as.character(unlist(sapply(obj.l, Cells))))
+  return(obj2)
+}
+
 ##-- Doublet functions ----
 runBcds <- function(seu, bcds.ntop=3000, bcds.srat=1, n=25){
   # Binary classification based doublet scoring (bcds)
