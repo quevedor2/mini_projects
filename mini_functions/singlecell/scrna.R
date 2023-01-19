@@ -132,7 +132,7 @@ subsetSeu <- function(obj, colid='dataset_celltype', n=1000, seed=1234){
 # [ident_meta] and [dvar].  For example, proportion of cells
 # per seurat_clusters belonging to samples A,B or C,D, where ident_meta
 # indicates that A,B are GroupX and C,D are group Y
-.getDeltaTbl <- function(seu, clusid, sampleid, dvar, ident_meta, method='rr'){
+.getDeltaTbl <- function(seu, clusid, sampleid, dvar, ident_meta, method='stdres'){
   sort_ord <- unique(c(dvar, colnames(ident_meta), 'sampleID'))
   ident_spl <- ident_meta %>% 
     dplyr::arrange(!!! rlang::syms(sort_ord)) %>% 
@@ -141,16 +141,21 @@ subsetSeu <- function(obj, colid='dataset_celltype', n=1000, seed=1234){
   # sub_ident_meta <- ident_spl[[1]][,sort_ord[c(2,3,1)]]
   sub_samples <- sapply(ident_spl, function(i) i%>% pull('sampleID'))
   
-  tbl <- table(list(seu@meta.data[,clusid], seu@meta.data[,sampleid])) %>% 
-    apply(., 2, function(i) i/sum(i)) %>%
+  cnt_tbl <- table(list(seu@meta.data[,clusid], seu@meta.data[,sampleid]))
+  chi_tbl <- chisq.test(cnt_tbl)
+  tbl <- apply(cnt_tbl, 2, function(i) i/sum(i)) %>%
     round(., 3)
+  
+
   cluster_hc <- hclust(dist(tbl))$order
   cluster_hc <- rownames(tbl)[cluster_hc]
   dtbl <- switch(method,
                  rr=log2(tbl[,sub_samples[1]] / tbl[,sub_samples[2]]),
-                 dist=tbl[,sub_samples[1]] - tbl[,sub_samples[2]])
+                 dist=tbl[,sub_samples[1]] - tbl[,sub_samples[2]],
+                 stdres=chi_tbl$stdres[,1])
   
-  list("dtbl"=dtbl, "cluster_ord"=cluster_hc, 'tbl'=tbl)
+  list("dtbl"=dtbl, "cluster_ord"=cluster_hc, 'tbl'=tbl,
+       'cnt_tbl'=cnt_tbl, 'chi_tbl'=chi_tbl)
 }
 
 # Wrapper function for annotation and getting the proportion of cells
@@ -167,7 +172,7 @@ getDiffProportionsPerClusters <- function(
   
   # Get the proportion of GroupA to GroupB per cluster and
   # format to add in the annotations
-  dtbl_l <- .getDeltaTbl(obj, clusid, sampleid, delta, ident_meta, method='rr')
+  dtbl_l <- .getDeltaTbl(obj, clusid, sampleid, delta, ident_meta, method='stdres')
   
   dtbl_melt <- melt(dtbl_l$dtbl) %>%
     rename_with(., ~c('Delta')) %>%
