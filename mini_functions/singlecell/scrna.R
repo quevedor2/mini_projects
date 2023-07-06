@@ -94,11 +94,19 @@ getNumOfPcs <- function(seu, min_var=0.9){
 # the subsetted object
 subsetSeu <- function(obj, colid='dataset_celltype', n=1000, seed=1234){
   set.seed(1234)
-  obj.l <- lapply(SplitObject(obj, split.by=colid) , function(obj.i){
-    s <- min(c(n, ncol(obj.i)))
-    obj.i[, sample(colnames(obj.i), size =s, replace=F)]
-  })
-  obj2 <- subset(obj, cells=as.character(unlist(sapply(obj.l, Cells))))
+  if(is.list(obj)){
+    obj2 <- lapply(obj, function(obj.i){
+      s <- min(c(n, ncol(obj.i)))
+      obj.cells <- obj.i[, sample(colnames(obj.i), size =s, replace=F)]
+      subset(obj.i, cells=Cells(obj.cells))
+    })
+  } else if(class(obj) == 'Seurat'){
+    obj.l <- lapply(SplitObject(obj, split.by=colid) , function(obj.i){
+      s <- min(c(n, ncol(obj.i)))
+      obj.i[, sample(colnames(obj.i), size =s, replace=F)]
+    })
+    obj2 <- subset(obj, cells=as.character(unlist(sapply(obj.l, Cells))))
+  }
   return(obj2)
 }
 

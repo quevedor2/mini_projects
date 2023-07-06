@@ -35,6 +35,10 @@ Run.STACAS <- function (object.list = NULL, assay = NULL, reference = NULL,
   return(integrated)
 }
 
+ref = seu.mnn.small
+assay='integrated'
+ndim = 25
+
 ## This function was editted from the standard ProjecTILs make.reference() 
 ## function to change line 66. Instead of using the ProjecTILs:::prcomp.seurat()
 ## function, which may through memory errors, it will use the Seurat
@@ -63,13 +67,18 @@ make.reference <- function (ref, assay = NULL, atlas.name = "custom_reference",
     varfeat <- ref@assays[[assay]]@var.features
   }
   
-  ref <- ScaleData(ref, features=varfeat) %>% 
-    RunPCA(., features=varfeat, npcs = ndim, assay = assay, verbose = FALSE)
-  ref <- .makeprcomp_obj(ref, varfeat)
-  pca.obj <- ref@misc$pca_object
-  table(names(pca.obj$center) %in% rownames(pca.obj$rotation))
+  #---- <START> Replace the prcomp.seurat function from ProjecTILs with a custom one ----
+  ## Original method
+  ref <- ProjecTILs:::prcomp.seurat(ref, ndim = ndim, assay = assay)
   
-  # ref <- ProjecTILs:::prcomp.seurat(ref, ndim = ndim, assay = assay)
+  ## New method
+  # ref <- ScaleData(ref, features=varfeat) %>% 
+  #   RunPCA(., features=varfeat, npcs = ndim, assay = assay, verbose = FALSE)
+  # ref <- .makeprcomp_obj(ref, varfeat)
+  # pca.obj <- ref@misc$pca_object
+  # table(names(pca.obj$center) %in% rownames(pca.obj$rotation))
+  #---- </END> Replace the prcomp.seurat function from ProjecTILs with a custom one ----
+  
   if (!recalculate.umap) {
     if (dimred %in% names(ref@reductions)) {
       ref.pca <- ref@misc$pca_object
@@ -146,14 +155,14 @@ make.reference <- function (ref, assay = NULL, atlas.name = "custom_reference",
   return(obj)
 }
 
-# prcomp.seurat <- function (obj, assay = NULL, ndim = 10, scale = TRUE)  { 
+# prcomp.seurat <- function (obj, assay = NULL, ndim = 10, scale = TRUE)  {
 #   if (is.null(assay)) {
 #     assay <- DefaultAssay(obj)
 #   }
 #   varfeat <- VariableFeatures(obj)
 #   refdata <- data.frame(t(as.matrix(obj@assays[[assay]]@data[varfeat, ])))
 #   refdata <- refdata[, sort(colnames(refdata))]
-#   ref.pca <- prcomp(refdata, rank. = ndim, scale. = scale, 
+#   ref.pca <- prcomp(refdata, rank. = ndim, scale. = scale,
 #                     center = TRUE, retx = TRUE)
 #   obj@misc$pca_object <- ref.pca
 #   obj@reductions$pca@cell.embeddings <- ref.pca$x
