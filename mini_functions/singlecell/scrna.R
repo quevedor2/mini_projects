@@ -20,7 +20,8 @@ preprocessAzimuth <- function(seu){
 preprocessSeu <- function(seu, ncount_min=400, ncount_max=Inf,
                           nfeature_min=200, nfeature_max=6000,
                           mt_max=25, org='mouse', numpcs=50, getPCs=FALSE,
-                          variable_features=2000, res=1.2){
+                          variable_features=2000, res=1.2,
+                          default.assay='RNA'){
   require(glmGamPoi)
   
   if(org=='mouse'){
@@ -44,7 +45,7 @@ preprocessSeu <- function(seu, ncount_min=400, ncount_max=Inf,
                   percent.mt < mt_max)
   
   # Normalization and Scaling
-  DefaultAssay(seu) <- 'RNA'
+  DefaultAssay(seu) <- default.assay
   seu <- NormalizeData(seu,
                        normalization.method = "LogNormalize") %>%
     FindVariableFeatures(., selection.method = "vst",
