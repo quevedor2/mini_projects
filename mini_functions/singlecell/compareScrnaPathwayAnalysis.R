@@ -6,6 +6,7 @@ library(cowplot)
 library(scales)
 library(msigdbr)
 # library(scRNAseq)
+library(pagoda2)
 library(SingleR)
 library(SCPA)
 # library(testSctpa)
@@ -56,8 +57,9 @@ wilcox_auc <- function(auc, seu, grps=c("CD4+ T cells", "B cells"), colid='manua
   })
   fc <- sapply(1:ncol(spl_auc[[1]]), function(idx){
     pc <- 0.0001
+    mean
     tryCatch({
-      log2(mean(spl_auc[[1]][,idx])+pc) - log2(mean(spl_auc[[2]][,idx])+pc)
+      log2((mean(spl_auc[[1]][,idx], na.rm=T)) / (mean(spl_auc[[2]][,idx], na.rm=T)+pc))
     }, error=function(e){NA})
   })
   
@@ -70,6 +72,61 @@ wilcox_auc <- function(auc, seu, grps=c("CD4+ T cells", "B cells"), colid='manua
   return(auc_df)
 }
 
+cal_pagoda2 = function(counts,
+                       gSets,
+                       trim = 5,
+                       n_cores=1){
+  
+  
+  ### must be counts matrix !!!!!
+  
+  ### other parameters for knn.error.models
+  # min.nonfailed = 5, min.count.threshold = 1,
+  # max.model.plots = 50,
+  # min.size.entries = 2000, min.fpm = 0, cor.method = "pearson",
+  # verbose = 0, fpm.estimate.trim = 0.25, linear.fit = TRUE,
+  # local.theta.fit = linear.fit, theta.fit.range = c(0.01, 100),
+  # alpha.weight.power = 1/2
+  
+  ### other parameters for pagoda.varnorm
+  # batch = NULL, prior = NULL,
+  # fit.genes = NULL, minimize.underdispersion = FALSE,
+  # n.cores = detectCores(), n.randomizations = 100, weight.k = 0.9,
+  # verbose = 0, weight.df.power = 1, smooth.df = -1,
+  # theta.range = c(0.01, 100), gene.length = NULL
+  
+  nPcs = min(round(ncol(counts)/5),5)
+  #counts = apply(counts,2,function(x) {storage.mode(x) = 'integer'; x})
+  tryCatch({
+    p2 = Pagoda2$new(counts, n.cores = n_cores,log.scale=F)
+    p2$adjustVariance(plot=F)
+    p2$calculatePcaReduction(nPcs = nPcs,use.odgenes=F,fastpath=F)
+    
+    path_names = c()
+    env <- list2env(gSets)
+    
+    p2$testPathwayOverdispersion(setenv = env, verbose = T,
+                                 recalculate.pca = T,
+                                 min.pathway.size = 1)
+    
+    path_names = names(p2$misc$pwpca)
+    score = matrix(NA,nrow=length(path_names),ncol=ncol(counts))
+    rownames(score) = path_names
+    colnames(score) = colnames(counts)
+    for(i in 1:length(p2$misc$pwpca)){
+      if(!is.null(p2$misc$pwpca[[i]]$xp$score)){
+        score[i,] = as.numeric(p2$misc$pwpca[[i]]$xp$scores)
+      }
+    }
+    
+    return(score)
+  },error = function(e){
+    print(e)
+    return("error")
+  })
+}
+
+
 ##############
 #### Main ####
 #---------------------------------
@@ -79,6 +136,7 @@ scpa_f <- file.path(outdir, "gse_benchmark", "scpa", "scpa.cd4t_b.rds")
 auc_f <- file.path(outdir, "gse_benchmark", "aucell", paste0("msigdb.", "LEVEL", ".rds"))
 auc_manual_f <- file.path(outdir, "gse_benchmark", "aucell", paste0("msigdb_manual.", "LEVEL", ".rds"))
 ssgsea_f <- file.path(outdir, "gse_benchmark", "ssgsea", paste0("ssgsea.", "LEVEL", ".rds"))
+pagoda2_f <- file.path(outdir, "gse_benchmark", "pagoda2", paste0("pagoda2.", "LEVEL", ".rds"))
 
 seu <- readRDS(file.path(outdir, "seurat_obj", "3_annotated.rds"))
 set.seed(1234)
@@ -176,6 +234,8 @@ msig_l
 
 #--- 0. f) VISION ----
 #--- 0. g) PAGODA2 ----
+pagoda2_scores<- cal_pagoda2(expr, msig_l)
+saveRDS(pagoda2_scores, file=gsub("LVL", mlvl, pagoda2_f))
 
 #-------------------------------------------------
 #--- 1. a) Load in precomputed pathway scores ----
@@ -196,12 +256,16 @@ aucell_scores <- lapply(c('C2'), function(mlvl){
 # Load in ssGSEA
 ssgsea_score <- readRDS(file=gsub("LVL", mlvl, ssgsea_f))
 
+# Load in Pagoda2
+pagoda2_score <- readRDS(file=gsub("LVL", mlvl, pagoda2_f))
+
 res = GeneToEnrichment(srt=seu, db=msig_l[1:500], method='rand_distribution', addtoseu=FALSE)
 
 barkley_df <- wilcox_auc(auc=as.data.frame(t(res$l2r)), seu, grps=c("CD4+ T cells", "B cells"), colid='anno') 
 ssgsea_df <- wilcox_auc(auc=as.data.frame(ssgsea_score), seu, grps=c("CD4+ T cells", "B cells"), colid='anno') 
-aucell_df <- wilcox_auc(auc=as.data.frame(assay(aucell_scores)), seu, grps=c("CD4+ T cells", "B cells"), colid='anno') 
-head(barkley_df, 20)
+aucell_df <- wilcox_auc(auc=as.data.frame(assay(aucell_scores)), seu, grps=c("CD4+ T cells", "B cells"), colid='anno')
+pagoda2_df <- wilcox_auc(auc=as.data.frame(pagoda2_score), seu, grps=c("CD4+ T cells", "B cells"), colid='anno') 
+head(pagoda2_df, 20)
 
 
 
@@ -228,8 +292,8 @@ aggregate_df <- aucell_df %>%
   dplyr::rename_with(., ~ paste0("aucell.", .), .cols = -Geneset) %>%
   dplyr::full_join(., ssgsea_df %>% mkSigOrder(., adjp='padj', geneset='Geneset') %>%
                      rename_with(., ~paste0("ssGSEA.", .), .cols = -Geneset), by='Geneset') %>%
-  dplyr::full_join(., barkley_df %>% mkSigOrder(., adjp='padj', geneset='Geneset') %>%
-                     rename_with(., ~paste0("Barkley.", .), .cols = -Geneset), by='Geneset') %>%
+  dplyr::full_join(., pagoda2_df %>% mkSigOrder(., adjp='padj', geneset='Geneset') %>%
+                     rename_with(., ~paste0("Pagoda2.", .), .cols = -Geneset), by='Geneset') %>%
   dplyr::full_join(., scpa_sig %>% rename_with(., ~paste0("SCPA.", .), .cols = -Pathway), by=c('Geneset'='Pathway')) %>%
   tibble::column_to_rownames(., "Geneset")
 
@@ -471,3 +535,88 @@ pdf("~/xfer/x.pdf", width = 14, height = 14)
 FeaturePlot(seu, feature=gsub("_", "-", head(top_scpa$Pathway)), reduction='umap', raster=T)
 FeaturePlot(seu, feature=gsub("_", "-", head(top_aucell$Pathway)), reduction='umap', raster=T)
 dev.off()
+
+#--- 1. c) BEYOND - PAGODA2 ----
+library(pagoda2)
+cm <- countMatrix <- p2data::sample_BM1
+p2.processed <- basicP2proc(countMatrix, n.cores=1, min.cells.per.gene=10, 
+                            n.odgenes=2e3, get.largevis=FALSE, make.geneknn=FALSE)
+ext.res <- extendedP2proc(p2.processed, organism = 'hs')
+
+
+
+counts <- gene.vs.molecule.cell.filter(cm, min.cell.size=500)
+counts <- counts[rowSums(counts)>=10, ]
+#create pagoda2 object
+rownames(counts) <- make.unique(rownames(counts))
+r <- Pagoda2$new(counts, log.scale=TRUE, n.cores=1)
+r$adjustVariance(plot=TRUE, gam.k=10)
+r$calculatePcaReduction(nPcs=50, n.odgenes=3e3)
+
+r$makeKnnGraph(k=40, type='PCA', center=TRUE, distance='cosine')
+r$getKnnClusters(method=infomap.community, type='PCA')
+M <- 30
+r$getEmbedding(type='PCA', embeddingType = 'largeVis', M=M, perplexity=30, gamma=1/M)
+r$getEmbedding(type='PCA', embeddingType='tSNE', perplexity=50, verbose=FALSE)
+
+r$getKnnClusters(method=multilevel.community, type='PCA', name='multilevel')
+r$getKnnClusters(method=walktrap.community, type='PCA', name='walktrap')
+
+r$getDifferentialGenes(type='PCA', verbose=TRUE, clusterType='community')
+
+suppressMessages(library(org.Hs.eg.db))
+ids <- unlist(lapply(mget(colnames(r$counts), org.Hs.egALIAS2EG, ifnotfound=NA), function(x) x[1]))
+rids <- names(ids)
+names(rids) <- ids
+# list all the ids per GO category
+go.env <- list2env(eapply(org.Hs.egGO2ALLEGS,function(x) as.character(na.omit(rids[x]))))
+
+r$testPathwayOverdispersion(go.env, verbose=TRUE, 
+                            recalculate.pca=F, min.pathway.size=1)
+
+hdea <- r$getHierarchicalDiffExpressionAspects(type='PCA', clusterName='community', z.threshold=3)
+genesets <- hierDiffToGenesets(hdea)
+termDescriptions <- Term(GOTERM[names(go.env)]) # saves a good minute or so compared to individual lookups
+
+sn <- function(x) { names(x) <- x; x}  ## utility function
+genesets.go <- lapply(sn(names(go.env)),function(x) {
+  list(properties=list(locked=TRUE, genesetname=x, shortdescription=as.character(termDescriptions[x])), genes=c(go.env[[x]]))
+})
+## concatenate
+genesets <- c(genesets, genesets.go)
+
+deSets <- get.de.geneset(r, groups = r$clusters$PCA[['community']], prefix = 'de_')
+## concatenate
+genesets <- c(genesets, deSets)
+r$makeGeneKnnGraph(n.cores = 1)
+
+
+
+
+r <- Pagoda2$new(counts, log.scale=TRUE, n.cores=1)
+r$adjustVariance(plot=TRUE, gam.k=10)
+r$calculatePcaReduction(nPcs=50, n.odgenes=3e3)
+go.list <- eapply(org.Hs.egGO2ALLEGS,function(x) as.character(na.omit(rids[x])))
+go.env <- list2env(go.list[1:100])
+pdf("~/xfer/pagoda2.pdf")
+r$testPathwayOverdispersion(setenv = go.env, verbose = T, recalculate.pca = T,
+                             plot = T, min.pathway.size = 3)
+dev.off()
+
+path_names = names(r$misc$pwpca)
+score = matrix(NA,nrow=length(path_names),ncol=ncol(counts))
+rownames(score) = path_names
+colnames(score) = colnames(counts)
+for(i in 1:length(r$misc$pwpca)){
+  if(!is.null(r$misc$pwpca[[i]]$xp$score)){
+    score[i,] = as.numeric(r$misc$pwpca[[i]]$xp$scores)
+  }
+}
+
+return(score)
+},error = function(e){
+  print(e)
+  return("error")
+})
+
+

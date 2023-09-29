@@ -172,8 +172,11 @@ mapTCRlabels <- function(seu, seu_scr, seu_djv, seu_imma,
     })
     
     tra_trb <- lapply(seq_along(v), function(idx){
+      print(idx)
       is_na <- all(c(vdjc_spl$v[[idx]], vdjc_spl$d[[idx]],
-                     vdjc_spl$j[[idx]], vdjc_spl$c[[idx]]) == 'NA')
+                     vdjc_spl$j[[idx]], vdjc_spl$c[[idx]]) == 'NA') | 
+        all(is.na(c(vdjc_spl$v[[idx]], vdjc_spl$d[[idx]],
+              vdjc_spl$j[[idx]], vdjc_spl$c[[idx]])))
       if(is_na) return(NA)
       vdj_grp_tra <- paste(vdjc_spl$v[[idx]], vdjc_spl$j[[idx]], 
                            vdjc_spl$c[[idx]], sep=".")
@@ -194,7 +197,7 @@ mapTCRlabels <- function(seu, seu_scr, seu_djv, seu_imma,
   # Used to make scRepertoire CTgene column
   .mergeVDJC <- function(vdjc){
     sapply(vdjc, function(vdjc_i){
-      if(is.na(vdjc_i)) return(NA)
+      if(all(is.na(vdjc_i))) return(NA)
       
       # merge multiple TRA's and TRB's with ;
       vdjc_spl <- split(vdjc_i, names(vdjc_i))
@@ -209,6 +212,7 @@ mapTCRlabels <- function(seu, seu_scr, seu_djv, seu_imma,
     ntl <- strsplit(nt, split="_")
     
     sapply(seq_along(vdjc), function(idx){
+      print(idx)
       vdjc_i <- vdjc[[idx]]
       nt_i <- ntl[[idx]]
       
@@ -242,7 +246,7 @@ mapTCRlabels <- function(seu, seu_scr, seu_djv, seu_imma,
   
   vdjc <- .makeVDJC(x_common$v, x_common$d, x_common$j, x_common$c)
   ctgene <- .mergeVDJC(vdjc)
-  ctstrict <- .mergeVDJCnt(vdjc, ctnt)
+  ctstrict <- tryCatch({.mergeVDJCnt(vdjc, ctnt)}, error=function(e){NA})
   freq <- .getFreq(ctgene)
   clonetype <- .getClonetype(freq)
   

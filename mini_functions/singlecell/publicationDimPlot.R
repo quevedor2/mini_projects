@@ -1,6 +1,6 @@
 publicationDimPlot <- function(seu, grp, simplify_labels=TRUE, colseed=231, 
                                colors_use=NULL, pt.size=NULL, aspect.ratio=NULL,
-                               repel=FALSE, ...){
+                               repel=FALSE, reduction='umap', ...){
   if(simplify_labels){
     seu@meta.data[,grp] <- gsub("^T_", "", seu@meta.data[,grp])
     grp_ids <- na.omit(unique(seu@meta.data[,grp]))
@@ -16,11 +16,16 @@ publicationDimPlot <- function(seu, grp, simplify_labels=TRUE, colseed=231,
   }
   if(is.null(colors_use)){
     print("Grabbing random colors...")
-    colors_use <- scCustomize::scCustomize_Palette(num_groups = length(unique(seu@meta.data[,grp])), 
+    colors_use <- scCustomize::scCustomize_Palette(num_groups = length(unique(seu@meta.data[,grp]))+1, 
                                                    ggplot_default_colors = FALSE, 
                                                    color_seed = colseed)
+    if('#E4E1E3FF' %in% colors_use){
+      colors_use <- colors_use[-which(colors_use %in% '#E4E1E3FF')]
+    } else {
+      colors_use <- colors_use[c(1:length(unique(seu@meta.data[,grp])))]
+    }
   }
-  plot <- DimPlot(seu, group.by=grp, raster=T, label=T, reduction='umap', 
+  plot <- DimPlot(seu, group.by=grp, raster=T, label=T, reduction=reduction, 
                   repel=repel, cols = colors_use, pt.size=pt.size) +
     theme(...)
   if(simplify_labels){
