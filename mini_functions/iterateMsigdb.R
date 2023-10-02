@@ -13,6 +13,7 @@
 #'    gseaFun <- function(msig_db, lfc_v){
 #'      GSEA(sort(na.omit(lfc_v), decreasing = T), TERM2GENE = msig_ds, pvalueCutoff = 1)
 #'    }
+#' @param min.gs.size Minimum gene set size to be considered
 #' @param ... pass-through params to your function
 #'
 #' @examples
@@ -20,7 +21,7 @@
 #'   GSEA(sort(na.omit(lfc_v), decreasing = T), TERM2GENE = msig_ds, pvalueCutoff = 1)
 #' }
 #' iterateMsigdb(species='Homo sapiens', fun=gseaFun, lfc_v = lfc_v)
-iterateMsigdb <- function(species, msig_lvls=NULL, fun, ...){
+iterateMsigdb <- function(species, msig_lvls=NULL, fun, min.gs.size=5, ...){
   ## Select the significant genes and filters
   if(is.null(msig_lvls)) {
     warning("Running msigdb levels: H, C2-CP:REACTOM, C5-GO:BP,GO:CC,GO:MF, C8")
@@ -48,14 +49,16 @@ iterateMsigdb <- function(species, msig_lvls=NULL, fun, ...){
   
   msig_obj <- lapply(names(msig_lvls), function(mlvl){
     if(mlvl == 'custom'){
-      sub_obj <- lapply(names(msig_lvls[[mlvl]]), function(sublvl){
+      idx <- which(sapply(msig_lvls[[mlvl]], length) > min.gs.size)
+      msig_lvls[[mlvl]] <- msig_lvls[[mlvl]][idx]
+      master_msig_ds <- lapply(names(msig_lvls[[mlvl]]), function(sublvl){
         msig_ds <- data.frame("gs_name"=sublvl,
                               "entrez_gene"=msig_lvls[[mlvl]][[sublvl]])
-        
-        obj <- fun(msig_ds=msig_ds, ...)
-        return(obj)
-      })
-      names(sub_obj) <- names(msig_lvls[[mlvl]])
+      }) %>% 
+        do.call(rbind, .) %>%
+        as.data.frame
+      sub_obj <- gseaFun(msig_ds=master_msig_ds, ...)
+      # names(sub_obj) <- names(msig_lvls[[mlvl]])
     } else {
       sub_obj <- lapply(msig_lvls[[mlvl]], function(sublvl){
         print(paste0(">", mlvl, ":", sublvl, "..."))
