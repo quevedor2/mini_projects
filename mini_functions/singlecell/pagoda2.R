@@ -99,7 +99,7 @@ cal_pagoda2 = function(counts,
 # recalculate.pca = F
 # min.pathway.size =1
 
-testPathwayOverdispersion.relaxed=function(setenv, type='counts', max.pathway.size=1e3, min.pathway.size=10, 
+testPathwayOverdispersion.relaxed=function(self, setenv, type='counts', max.pathway.size=1e3, min.pathway.size=10, 
                                            n.randomizations=5, verbose=FALSE, n.cores=self$n.cores, score.alpha=0.05, plot=FALSE, cells=NULL, adjusted.pvalues=TRUE,
                                            z.score = qnorm(0.05/2, lower.tail = FALSE), use.oe.scale = FALSE, return.table=FALSE, name='pathwayPCA',
                                            correlation.distance.threshold=0.2, loading.distance.threshold=0.01, top.aspects=Inf, recalculate.pca=FALSE, save.pca=TRUE) {
