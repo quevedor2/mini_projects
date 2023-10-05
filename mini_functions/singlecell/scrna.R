@@ -194,25 +194,31 @@ getDiffProportionsPerClusters <- function(
   return(dtbl_melt)
 }
 ##-- Doublet functions ----
-runBcds <- function(seu, bcds.ntop=3000, bcds.srat=1, n=25){
+runBcds <- function(x, bcds.ntop=3000, bcds.srat=1, n=25){
   # Binary classification based doublet scoring (bcds)
   # Creates artificial doublets and trains a classifier to predict them
   # based on the most variable genes features
   
-  sce <- as.SingleCellExperiment(seu)
+  if(class(x) == 'Seurat') { 
+    DefaultAssay(x) <- default.assay
+    x <- as.SingleCellExperiment(x)
+  } else if(class(x) != 'SingleCellExperiment'){
+    stop("object must be SingleCellExperiment")
+  }
   # bcds.ntop <- 3000 # number of variable gene features to consider
   # bcds.srat <- 1    # ratio of nCells to doublets
   # retRes <- TRUE    # return the classifier
   # varImp <- TRUE    # return variable importance
   # nmax <- 25        # number of iterations to train model
-  sce = scds::bcds(sce, verb = TRUE, ntop = bcds.ntop,
+  sce = scds::bcds(x, verb = TRUE, ntop = bcds.ntop,
                    srat = bcds.srat, retRes=TRUE, varImp=TRUE)
   bcds_score <- as.data.frame(sce$bcds_score)
   top_n <- getTopScdsPairs(sce, method='bcds', n=n)
   return(list("bcds"=bcds_score, "top_pairs"=top_n))
 }
 
-runCxds <- function(seu, cxds.ntop=3000, cxds.binThresh=0, n=5){
+
+runCxds <- function(x, cxds.ntop=3000, cxds.binThresh=0, n=5){
   # Co-expression based doublet scoring
   # Binarizes gene-expression per cell (present/absent), then finds the rate of
   # co-expression between genes. Attributes a score to each gene based on how
@@ -220,12 +226,17 @@ runCxds <- function(seu, cxds.ntop=3000, cxds.binThresh=0, n=5){
   # sum the co-expressed gene pair scores (high scores denotes doublets as they
   # will continue both high-scoring single-cell genes)
   
-  sce <- as.SingleCellExperiment(seu)
+  if(class(x) == 'Seurat') { 
+    DefaultAssay(x) <- default.assay
+    x <- as.SingleCellExperiment(x)
+  } else if(class(x) != 'SingleCellExperiment'){
+    stop("object must be SingleCellExperiment")
+  }
   # cxds.ntop <- 3000   # number of variable gene features to consider 
   # cxds.binThresh <- 0 # minimum counts to consider a gene "present"
   # retRes <- TRUE      # whether to return gene pair scores & top-scoring gene pairs
   
-  sce = scds::cxds(sce, retRes = TRUE, ntop =cxds.ntop, 
+  sce = scds::cxds(x, retRes = TRUE, ntop =cxds.ntop, 
                    binThresh = cxds.binThresh)
   cxds_score <- data.frame("cxds"=sce$cxds_score,
                            "z_cxds"=scale(sce$cxds_score)[,1])

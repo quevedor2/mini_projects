@@ -21,7 +21,7 @@ setwd(PDIR)
 
 ##############
 #### Main ####
-samples <- list.files(PDIR, pattern="intron")
+samples <- list.files(PDIR, pattern="PDAC|IPMN")
 seul <- lapply(samples, function(s){
   seu.data <- Read10X(data.dir = file.path(PDIR, s))
   seu <- CreateSeuratObject(counts = seu.data, project = s)
@@ -31,6 +31,7 @@ seul <- lapply(samples, function(s){
 
 
 seu <- merge(seul[[1]], seul[-1], add.cell.ids=samples)
+seu <- JoinLayers(seu)
 DefaultAssay(seu) <- 'RNA'
 seu[["RNA"]] <- split(seu[["RNA"]], f = seu$orig.ident)
 
@@ -72,6 +73,7 @@ dp2b <- DimPlot(seu, group.by='seurat_clusters', raster=T, reduction='umap.unint
 cowplot::plot_grid(dp1a, dp1b, ncol=2)
 cowplot::plot_grid(dp2a, dp2b, ncol=2)
 dev.off()
+file.copy(file.path(PDIR, "results", "compare.pdf"), "~/xfer")
 
 
 
@@ -100,21 +102,26 @@ Idents(seu_integ) <- 'seurat_clusters'
 cell_barcodes <- split(gsub("^.*_([ACGT]*)-.*$", "\\1", Cells(seu_integ)), 
                        f=gsub("^(.*)_[ACGT]*-.*$", "\\1", Cells(seu_integ)))
 
-samples <- c('IPMN_HPB197', 'PDAC_HPB342')
-deg_samecells_l <- lapply(setNames(samples,samples), function(s){
-  print(s)
-  cells <- sample(cell_barcodes[[paste0(s, "_intronNeg")]], size=500)
+sample_comps <- list("IPMN_HPB197_cr6.7"=c("IPMN_HPB197_intronNeg", "IPMN_HPB197_intronPos"),
+                     "PDAC_HPB342_cr6.7"=c("PDAC_HPB342_intronNeg", "PDAC_HPB342_intronPos"),
+                     "PDAC_HPB342_cr6a.6b"=c("PDAC_HPB342_cr6a_4700", "PDAC_HPB342_cr6b_4700"),
+                     "PDAC_HPB342_cr6a.4700.5700"=c("PDAC_HPB342_cr6a_4700", "PDAC_HPB342_cr6a_5700"))
+deg_samecells_l <- lapply(sample_comps, function(s){
+  print(paste(s,collapse="__"))
+  cells <- sample(cell_barcodes[[s[1]]], size=500)
   cells_keep <- sapply(cells, function(i) grep(i, Cells(seu_integ), value=T)) %>% 
     unlist() %>% as.character
   
   Idents(seu_integ) <- 'orig.ident'
   FindMarkers(seu_integ, 
-              ident.1=paste0(s, "_intronPos"),
-              ident.2=paste0(s, "_intronNeg"), 
+              ident.1=s[1],
+              ident.2=s[2], 
               logfc.threshold=0)
 })
-saveRDS(deg_samecells_l, file.path(PDIR, "results", "degs.500matching_barcodes.rds"))
+saveRDS(deg_samecells_l, file.path(XDIR, "results", "degs.500matching_barcodes.rds"))
 lapply(deg_samecells_l, head)
+deg_samecells_l$`PDAC_HPB342_cr6a.6b`$avg_log2FC %>% summary
+deg_samecells_l$`PDAC_HPB342_cr6a.4700.5700`$avg_log2FC %>% summary
 
 pcutoff <- 1*10^(-c(1:10))
 sapply(setNames(pcutoff, pcutoff), function(cutoff){
