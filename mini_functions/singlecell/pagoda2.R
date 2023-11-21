@@ -1,9 +1,16 @@
+# counts=expr[idx,]
+# gSets=msig_l
+# trim = 5
+# n_cores=1
+# min_gset_size=5
+# max_gset_size=1000
+
 cal_pagoda2 = function(counts,
                        gSets,
                        trim = 5,
                        n_cores=1,
                        min_gset_size=5,
-                       max_gset_size=1000){
+                       max_gset_size=1000, ...){
   
   # counts <- expr
   # gSets <- msig_l
@@ -50,11 +57,11 @@ cal_pagoda2 = function(counts,
     # p2$makeKnnGraph(k=40,type='PCA',center=T,distance='cosine');
     # p2$getKnnClusters(method=infomap.community,type='PCA')
     # p2$getHierarchicalDiffExpressionAspects(type='PCA',clusterName='community',z.threshold=3)
-    
+
     p2 <- testPathwayOverdispersion.relaxed(self=p2, setenv = env, verbose = T,
                                             recalculate.pca = F,
                                             min.pathway.size =min_gset_size,
-                                            max.pathway.size=max_gset_size)
+                                            max.pathway.size=max_gset_size, ...)
     
     path_names = names(p2$misc$pwpca)
     score = matrix(NA,nrow=length(path_names),ncol=ncol(counts))

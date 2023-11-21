@@ -19,6 +19,33 @@ gsea2CytoscapeFormat <- function(dat, gs_map, ...){
               "down"=datl[['FALSE']]))
 }
 
+# Takes the geneSet data frame outputted from clusterProfiler::GSEA()@result
+# and converts it into the UP and DOWN files with the corresponding GO/REACTOME
+# identifiers in the GS.DETAILS section for plotting in enrichmentMap of 
+# cytoscape
+findmarkers2CytoscapeFormat <- function(dat, gs_map, ...){
+  dat <- dat %>% 
+    tibble::rownames_to_column('ID') %>%
+    mutate(Details=toupper(gs_map[ID,]$ID),
+           Description=toupper(gs_map[ID,]$Desc),
+           Details=NA,
+           setSize=gs_map[ID,]$setSize,
+           rank=NA,
+           leading_edge=NA,
+           FC=2^avg_log2FC,
+           qval=p_val_adj) %>%
+    mutate(ID=toupper(ID)) %>%
+    dplyr::select(ID, Description, Details, setSize, FC, avg_log2FC, p_val,
+                  p_val_adj, qval, rank, leading_edge) %>%
+    rename_with(., ~c('NAME', 'GS.br..follow.link.to.MSigDB', 'GS.DETAILS', 
+                      'SIZE', 'ES', 'NES', 'NOM.p.val', 'FDR.q.val', 
+                      'FWER.p.val', 'RANK.AT.MAX', 'LEADING.EDGE'))
+  datl <- split(dat, (dat$NES > 0))
+  return(list("up"=datl[['TRUE']],
+              "down"=datl[['FALSE']]))
+}
+
+
 # Creates a named vector mapping of msigdbr genesets to unique exact code
 # e.g. c('GO:BP_Pathway_X'='GO_123456')
 .mapGsToExactSource <- function(msig_lvls, species){
