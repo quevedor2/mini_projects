@@ -129,7 +129,7 @@ makeLoupe <- function(mat, meta, projections,
     }
     return(proj_i)
   }) 
-  if(class(projections[[1]])=='list') projections <- unlist(projections, recursive=F)
+  if(class(projections[[1]]) == 'list') projections <- unlist(projections, recursive=F)
     
   
   if(length(names(projections))==0){
