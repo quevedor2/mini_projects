@@ -18,22 +18,26 @@
     magrittr::set_colnames(paste0("Sample", c(1:10))) %>%
     magrittr::set_rownames(paste0("Feature", c(1:20)))
   
-  meta <- data.frame("cluster"=c(rep("A", 10), rep("B", 10)),
-                     "group"=sample(c("X", "Y", "Z"), size=20, replace=T))
+  meta <- data.frame("cluster"=c(rep("A",5), rep("B", 5)),
+                     "group"=sample(c("X", "Y", "Z"), size=10, replace=T)) %>%
+    magrittr::set_rownames(colnames(mat))
   
   # Either of the following methods works. If you want to include multiple reductions,
   # use a list of projections. If you just want to use a single projection matrix,
   # you can input just a single matrix.
-  projections <- data.frame("PCA_1"=rnorm(n=20, mean=5, sd=2),
-                            "PCA_2"=rnorm(n=20, mean=5, sd=2),
-                            "PCA_3"=rnorm(n=20, mean=5, sd=2))
-  projections = list("UMAP"=data.frame("umap_1"=rnorm(n=20, mean=5, sd=2),
-                                       "umap_2"=rnorm(n=20, mean=5, sd=2)),
-                     "tSNE"=data.frame("tsne_1"=rnorm(n=20, mean=5, sd=2),
-                                       "tsne_2"=rnorm(n=20, mean=5, sd=2)))
+  projections <- data.frame("PCA_1"=rnorm(n=10, mean=5, sd=2),
+                            "PCA_2"=rnorm(n=10, mean=5, sd=2),
+                            "PCA_3"=rnorm(n=10, mean=5, sd=2)) %>%
+    magrittr::set_rownames(colnames(mat))
+  projections = list("UMAP"=data.frame("umap_1"=rnorm(n=10, mean=5, sd=2),
+                                       "umap_2"=rnorm(n=10, mean=5, sd=2)) %>%
+                       magrittr::set_rownames(colnames(mat)),
+                     "tSNE"=data.frame("tsne_1"=rnorm(n=10, mean=5, sd=2),
+                                       "tsne_2"=rnorm(n=10, mean=5, sd=2)) %>%
+                       magrittr::set_rownames(colnames(mat)))
   
   makeLoupe(mat=mat, meta=meta, projections=projections,
-            output_dir="/path/to/output_directory", output_name="demo")
+            output_dir="~/xfer", output_name="demo")
   # the file will be outputed as: /path/to/output_directory/demo.cloupe
 }
 
@@ -125,7 +129,7 @@ makeLoupe <- function(mat, meta, projections,
     }
     return(proj_i)
   }) 
-  if(is.list(projections[[1]])) projections <- unlist(projections, recursive=F)
+  if(class(projections[[1]])=='list') projections <- unlist(projections, recursive=F)
     
   
   if(length(names(projections))==0){
@@ -160,6 +164,48 @@ makeLoupe <- function(mat, meta, projections,
   return(meta)
 }
 
-
-
-
+# 
+# 
+# h5path <- sprintf("%s.h5", tempfile())
+# h5path <- '~/xfer/tmp.h5'
+# feature_ids <- NULL
+# ok <- loupeR:::create_hdf5(count_mat, clusters, projections, h5path, 
+#                   feature_ids, seurat_obj_version)
+# f <- hdf5r::H5File$new(h5path, mode = "w")
+# loupeR:::write_mat(f, count_mat, feature_ids)
+# loupeR:::write_clusters(f, clusters)
+# loupeR:::write_projections(f, projections)
+# loupeR:::write_metadata(f, seurat_obj_version)
+# f$close()
+# SUCCESS
+# 
+# ok <- loupeR:::louper_create_cloupe(h5path, 
+#                            output_dir = output_dir, 
+#                            output_name = output_name, 
+#                            executable_path = NULL, 
+#                            force = force)
+# loupe_path <- sprintf("%s.cloupe", file.path(output_dir, 
+#                                              output_name))
+# h5path <- normalizePath(path.expand(h5path))
+# loupe_path <- suppressWarnings(normalizePath(path.expand(loupe_path)))
+# input_flag <- sprintf("--input=%s", h5path)
+# output_flag <- sprintf("--output=%s", loupe_path)
+# args <- c("create", input_flag, output_flag, "--force")
+# executable_path <- loupeR:::find_executable()
+# args=c('create', '--input=/cluster/home/quever/xfer/tmp.h5', '--output=/cluster/home/quever/xfer/demo.cloupe', '--force')
+# executable_path='/cluster/home/quever/.local/share/R/loupeR/louper'
+# 
+# system2(command = executable_path, args = args)
+# system(command = paste(c(executable_path, args), collapse=" "))
+# # /cluster/home/quever/.local/share/R/loupeR/louper \
+# # create \
+# # --input=/cluster/home/quever/xfer/tmp.h5 \
+# # --output=/cluster/home/quever/xfer/demo.cloupe \
+# # --force
+# if (status == 0) {
+#   return(SUCCESS)
+# }
+# else {
+#   return(err(sprintf("Louper executable failed: status code %d", 
+#                      status)))
+# }
