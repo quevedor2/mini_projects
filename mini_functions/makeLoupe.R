@@ -88,7 +88,7 @@ makeLoupe <- function(mat, meta, projections,
   return(list(mat=mat, barcodemapping=barcodemapping))
 }
 .formatProjections <- function(projections, mat, barcodemapping){
-  if(any(class(projections) %in% c('matrix', 'data.frame'))){
+  if(class(projections) %in% c('matrix', 'data.frame')){
     warning("Converting projection data into a list")
     projections=list("proj"=projections)
   }
@@ -129,7 +129,7 @@ makeLoupe <- function(mat, meta, projections,
     }
     return(proj_i)
   }) 
-  if(class(projections[[1]]) == 'list') projections <- unlist(projections, recursive=F)
+  if(any(class(projections[[1]]) == 'list')) projections <- unlist(projections, recursive=F)
     
   
   if(length(names(projections))==0){
