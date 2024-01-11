@@ -727,9 +727,32 @@ for(i in 1:length(r$misc$pwpca)){
 }
 
 return(score)
-},error = function(e){
-  print(e)
-  return("error")
-})
+
+#--- Loupe ----
+seu_files <- list('ST2'=list('file'='st2_mouse_seu.rds', 
+                             'species'='Mus musculus',
+                             'group1'='manual_anno',
+                             'group1_population'=c('B', 'CD4_Tcell')),
+                  'IPMN'=list('file'='ipmnPDAC_human_seu.rds',
+                              'species'='Homo sapiens',
+                              'group1'='hpca.main.cluster',
+                              'group1_population'=c("T_cells", "B_cell")),
+                  'P14'=list('file'='P14_seurs_with_geneset_enrichment_scores.rds',
+                             'species'='Mus musculus',
+                             'group1'='cell_type',
+                             'group1_population'=c('Proliferative P14', 'Terminal Tex')))
+seuf <- seu_files$P14
+seu <- readRDS(file.path(datadir, seuf$file))
+
+meta <- seu@meta.data[,c('sample', 'seurat_clusters', 'cell_type', 'sample')]
+seu@meta.data <- meta
+seu[['RNA2']] <- CreateAssayObject(counts=seu@assays$RNA$counts)
+DefaultAssay(seu) <- 'RNA2'
+# seu <- subset(seu, cells=sample(Cells(seu), size=1000))
+loupeR::create_loupe_from_seurat(seu, output_dir=file.path("~/xfer"),
+                                 output_name="siran_p14", force=T)
+file.copy(file.path("~/xfer", "siran_p14.cloupe"),
+          to = "~/xfer", overwrite = T)
+
 
 

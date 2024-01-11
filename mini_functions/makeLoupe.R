@@ -125,11 +125,12 @@ makeLoupe <- function(mat, meta, projections,
       names(proj_mats) <- paste0(c(1:(npcs-1)), ".", c(2:npcs))
       proj_i <- lapply(proj_mats, function(i) round(as.matrix(i), 2))
     } else {
-      list(proj_i)
+      proj_i <- list(proj_i)
     }
     return(proj_i)
   }) 
-  if(any(class(projections[[1]]) == 'list')) projections <- unlist(projections, recursive=F)
+  
+  if(any(sapply(projections, class) == 'list')) projections <- unlist(projections, recursive = F)
     
   
   if(length(names(projections))==0){
