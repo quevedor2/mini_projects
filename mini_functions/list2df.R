@@ -1,6 +1,9 @@
 
 
 list2df <- function(lst, id.col=NULL, value.col=NULL){
+  if(any(sapply(lst, class) == 'NULL')){
+    lst <- lst[-which(sapply(lst, class) == 'NULL')]
+  }
   if(all(sapply(lst, class) == 'list')){
     lst <- lapply(lst, list2df)
   }
