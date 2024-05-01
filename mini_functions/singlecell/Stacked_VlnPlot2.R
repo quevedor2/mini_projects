@@ -1,24 +1,9 @@
 # The same as Stacked_VlnPlot from scCustomize, but will return the ggplot object
 # from VlnPlot instead of patchworking things together
-Stacked_VlnPlot2 <- function(
-  seurat_object,
-  features,
-  group.by = NULL,
-  split.by = NULL,
-  idents = NULL,
-  x_lab_rotate = FALSE,
-  plot_legend = FALSE,
-  colors_use = NULL,
-  color_seed = 123,
-  ggplot_default_colors = FALSE,
-  plot_spacing = 0.15,
-  spacing_unit = "cm",
-  vln_linewidth = NULL,
-  pt.size = NULL,
-  raster = NULL,
-  add.noise = TRUE,
-  ...
-) {
+Stacked_VlnPlot2 <- function(seurat_object, features, group.by = NULL, split.by = NULL,
+  idents = NULL, x_lab_rotate = FALSE, plot_legend = FALSE, colors_use = NULL,
+  color_seed = 123, ggplot_default_colors = FALSE, plot_spacing = 0.15, spacing_unit = "cm",
+  vln_linewidth = NULL, pt.size = NULL, raster = NULL, add.noise = TRUE, ...) {
   # Check Seurat
   scCustomize:::Is_Seurat(seurat_object = seurat_object)
   
@@ -35,7 +20,7 @@ Stacked_VlnPlot2 <- function(
   
   if (length(x = num_cells) * length(x = all_found_features) > 100000 && is.null(x = raster) && pt.size != 0) {
     raster <- TRUE
-    cli_inform(message = c("NOTE: Rasterizing points since total number of points across all plots exceeds 100,000.",
+    warning(message = c("NOTE: Rasterizing points since total number of points across all plots exceeds 100,000.",
                            "i" = "To plot in vector form set {.code raster=FALSE}")
     )
   }

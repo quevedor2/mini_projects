@@ -1,6 +1,6 @@
 publicationDimPlot <- function(seu, grp, simplify_labels=TRUE, colseed=231, 
                                colors_use=NULL, pt.size=NULL, aspect.ratio=NULL,
-                               repel=FALSE, reduction='umap', ...){
+                               repel=FALSE, reduction='umap', return='plot', ...){
   if(simplify_labels){
     seu@meta.data[,grp] <- gsub("^T_", "", seu@meta.data[,grp])
     grp_ids <- na.omit(unique(seu@meta.data[,grp]))
@@ -53,8 +53,15 @@ publicationDimPlot <- function(seu, grp, simplify_labels=TRUE, colseed=231,
     patchwork::area(t = 1, l = 2, b = 11, r = 11),
     patchwork::area(t = 10, l = 1, b = 12, r = 2))
   
-  plot_figure <- plot + axis_plot +
-    patchwork::plot_layout(design = figure_layout) & 
-    theme(aspect.ratio=aspect.ratio)
+  if(return=='plot'){
+    plot_figure <- plot + axis_plot +
+      patchwork::plot_layout(design = figure_layout) & 
+      theme(aspect.ratio=aspect.ratio)
+  } else {
+    plot_figure = list('plot'=plot,
+                       'axis_plot'=axis_plot,
+                       'figure_layout'=figure_layout,
+                       'aspect.ratio'=aspect.ratio)
+  }
   return(plot_figure)
 }
