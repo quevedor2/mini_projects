@@ -368,7 +368,7 @@ XenaTCGAanalyze_SurvivalKM <- function (clinical_patient, data_grp,
     # plotSurvival(cfu_split, pval_mat, sc_stats, ...)
     tabSurv_c <- ggPlotSurvival(cfu=cfu_complete, mytable=pval_mat, 
                                 add.pvaltbl=add.pvaltbl, ...)
-    if(ret.pvaltbl) tabSurv_C <- list(tabSurv_c, pval_mat)
+    if(ret.pvaltbl) tabSurv_c <- list(tabSurv_c, pval_mat)
   } else {
     tabSurv_c <- list('cfu'=cfu_complete, 'tab'=tabSurv_c, 'pval'=pval_mat)
   }
