@@ -284,8 +284,40 @@ TCGAanalyze_SurvivalKM3 <- function (clinical_patient, data_grp,
   return(status)
 }
 
+{
+  library(survival)
+  library(tidyverse)
+  variables <- read.csv("~/Desktop/variables.csv")
+  veteran.data <- veteran
+  
+  veteran.data %>%
+    select(trt, celltype, time, status, karno, diagtime, age, prior) %>%
+    tbl_summary(by = trt, 
+                missing = "no") %>%
+    add_p(pvalue_fun = ~style_pvalue(.x, digits = 2)) %>% 
+    add_overall() %>%
+    modify_header(label = "**Variable**") %>% 
+    bold_labels() %>%
+    modify_caption("**Table 4. Patient characteristics from the Veterans Lung Cancer Trial**") %>%
+    modify_spanning_header(c("stat_1", "stat_2") ~ "**Treatment Received**")
+  
+  kmcurve <- survfit(Surv(time, status) ~ trt, data = veteran.data)
+  plot(kmcurve)
+  
+  survminer::ggsurvplot(kmcurve, 
+                        conf.int = TRUE,
+                        pval = TRUE,
+                        risk.table = TRUE,
+                        legend.labs = c("treatment 1", "treatment 2"),
+                        title = "Kaplan-Meier curves")
+  
+  coxmodel2 <- coxph(Surv(time, status) ~ trt, data = veteran.data)
+  hr <- exp(coef(coxmodel2))
+  hr_confint <- exp(confint(coxmodel2))
 
-XenaTCGAanalyze_SurvivalKM <- function (clinical_patient, data_grp,
+}
+
+XenaSurvival_LR_Coxph <- function (clinical_patient, data_grp,
                                         Survresult = FALSE, metric="OS", ...) {
   require(plotrix)
   TCGAbiolinks:::check_package("survival")
@@ -362,7 +394,98 @@ XenaTCGAanalyze_SurvivalKM <- function (clinical_patient, data_grp,
     # plotSurvival(cfu_split, pval_mat, sc_stats, ...)
     tabSurv_c <- ggPlotSurvival(cfu_complete, pval_mat, ...)
   } else {
-    tabSurv_c <- tabSurv_c
+    tabSurv_c <- list('cfu'=cfu_complete, 'tab'=tabSurv_c, 'pval'=pval_mat)
+  }
+  
+  return(tabSurv_c)
+}
+
+
+XenaTCGAanalyze_SurvivalKM <- function (clinical_patient, data_grp,
+                                        Survresult = FALSE, metric="OS", 
+                                        add.pvaltbl=T, ...) {
+  require(plotrix)
+  TCGAbiolinks:::check_package("survival")
+  all_samples <- as.character(unlist(data_grp))
+  
+  ## Pre-format the survival data
+  message(paste0("Analyzing: ", metric))
+  stopifnot(.validateXenaSurvival(clinical_patient))
+  clinical_patient[is.na(clinical_patient)] <- 0
+  cfu <- clinical_patient %>%
+    dplyr::select(sample, !!rlang::sym(metric), !!rlang::sym(paste0(metric, ".time"))) %>%
+    dplyr::filter(sample %in% all_samples) %>%
+    magrittr::set_colnames(., c("sample", "status", "days_to_death")) %>% 
+    mutate("days_to_last_follow_up"=days_to_death,
+           "time"=days_to_death) %>%
+    as.data.frame 
+  
+  cfu[cfu$status == 0, "days_to_death"] <- "-Inf"
+  cfu[cfu$status == 1, "days_to_last_follow_up"] <- "-Inf"
+  cfu_complete <- cfu %>%
+    mutate(days_to_death = as.numeric(days_to_death),
+           days_to_last_follow_up = as.numeric(as.character(days_to_last_follow_up))) %>%
+    tibble::column_to_rownames(., var='sample')
+  
+  
+  ## subset the metadata to match the groups
+  # subset the metadata to match the groups
+  data <- matrix(unlist(data_grp)) %>%
+    as.data.frame() %>%
+    rename_with(., ~ "samples") %>%
+    mutate(group=rep(names(data_grp), sapply(data_grp, length))) %>%
+    dplyr::filter(!duplicated(samples),
+                  samples %in% rownames(cfu_complete))
+  
+  cfu_complete <- cfu_complete[match(data$samples,rownames(cfu_complete)),]
+  cfu_complete$grp <- data$group
+  cfu_split <- split(cfu_complete, f=data$group)
+  
+  
+  # count the number of deaths
+  ttime <- as.numeric(cfu_complete[, "days_to_death"])
+  deads_complete <- sum(status <- ttime > 0)    # number of dead [ALL]
+  deads_spl <- sapply(cfu_split, cntDead)
+  
+  tabSurv_c <- setNames(c(deads_complete, deads_spl), 
+                        c('Cancer_Deaths', paste0('Cancer_Deaths', names(deads_spl))))
+  
+  # estimate survival p-value and chisquare value
+  if(add.pvaltbl){
+    sc_stats <- lapply(names(cfu_split), function(grp_i){
+      sapply(names(cfu_split), function(grp_j){
+        if(grp_i != grp_j){
+          cfu <- do.call(rbind, cfu_split[c(grp_i, grp_j)]) %>%
+            as.data.frame() %>% 
+            mutate(grp=rep(c(grp_i, grp_j), sapply(cfu_split[c(grp_i, grp_j)], nrow)))
+          get_surv_pval(cfu)
+        } else {
+          c('pval'=NA, 'chis'=NA, 'ttime'=NA)
+        }
+      })
+    })
+    names(sc_stats) <- names(cfu_split)
+    
+    
+    pval_mat <- round(sapply(sc_stats, function(i) unlist(i['pval',])),3)
+    pval_mat[is.na(pval_mat)] <- 1
+    id_mat <- sapply(colnames(pval_mat), function(i){
+      sapply(rownames(pval_mat), function(j) paste0(i, "_", j))
+    })
+    tabSurv_c <- c(tabSurv_c,setNames(pval_mat[lower.tri(pval_mat)],
+                                      paste0("p_", id_mat[lower.tri(id_mat)])))
+  } else {
+    pval_mat <- matrix(0)
+  }
+  
+  
+  # do the plotty plotties
+  if (Survresult == TRUE) {
+    # plotSurvival(cfu_split, pval_mat, sc_stats, ...)
+    tabSurv_c <- ggPlotSurvival(cfu=cfu_complete, mytable=pval_mat, 
+                                add.pvaltbl=add.pvaltbl, ...)
+  } else {
+    tabSurv_c <- list('cfu'=cfu_complete, 'tab'=tabSurv_c, 'pval'=pval_mat)
   }
   
   return(tabSurv_c)
@@ -398,10 +521,19 @@ cntDead <- function(cfu_x){
   deads_x
 }
 
-ggPlotSurvival <- function(cfu, mytable, caption=''){
+ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T){
   require(gridExtra)
   require(survminer)
   fit <- survfit(Surv(time, status) ~ grp, data = cfu)
+  
+  # Get HR
+  coxmodel <- coxph(Surv(time, status) ~ grp, data = cfu)
+  hr <- round(exp(coef(coxmodel)), 2)
+  hr_confint <-  round(exp(confint(coxmodel)),2) %>% apply(., 1, paste, collapse=", ")
+    
+  hr_tbl <- data.frame('HR'=hr,
+                       '95% CI'=hr_confint, check.names = F)
+  
   
   # grps <- c('2>1', '1>2')
   # grps <- c("FALSE", "TRUE")
@@ -457,11 +589,22 @@ ggPlotSurvival <- function(cfu, mytable, caption=''){
     annotation_custom(tableGrob(mytable, theme = ttheme_default(base_size = 5)),
                       xmin=1, xmax=8, ymin=0, ymax=10) +
     ggmap::theme_nothing()
+  hr_ggtb <- ggplot(data.frame(0)) + 
+    xlim(0,10) + ylim(0,10) +
+    annotation_custom(tableGrob(hr_tbl, theme = ttheme_default(base_size = 5)),
+                      xmin=1, xmax=8, ymin=0, ymax=10) +
+    ggmap::theme_nothing() 
   ggsurv_grid <- cowplot::plot_grid(ggsurv$plot + ggtitle(caption), 
                            ggsurv$table + theme(legend.position='none'), 
                            ggsurv$ncensor.plot + theme(legend.position='none'),
                            nrow=3, rel_heights = c(3,2,1))
-  cowplot::plot_grid(ggsurv_grid, ggtbl, ncol = 2, rel_widths = c(3,1))
+  
+  if(add.pvaltbl){
+    cowplot::plot_grid(ggsurv_grid, ggtbl, ncol = 2, rel_widths = c(3,1))
+  } else {
+    cowplot::plot_grid(ggsurv_grid, hr_ggtb, ncol = 2, rel_widths = c(3,1))
+  }
+  
 }
 
 plotSurvival <- function(cfu_split, pval_mat, sc_stats, 
