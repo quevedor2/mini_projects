@@ -412,13 +412,23 @@ ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T){
   fit <- survfit(Surv(time, status) ~ grp, data = cfu)
   
   # Get HR
-  coxmodel <- coxph(Surv(time, status) ~ grp, data = cfu)
-  hr <- round(exp(coef(coxmodel)), 2)
-  hr_confint <-  round(exp(confint(coxmodel)),2) %>% apply(., 1, paste, collapse=", ")
+  .getHrTbl <- function(cfu){
+    coxmodel <- coxph(Surv(time, status) ~ grp, data = cfu)
+    hr <- round(exp(coef(coxmodel)), 2)
+    hr_confint <-  round(exp(confint(coxmodel)),2) %>% apply(., 1, paste, collapse=", ")
     
-  hr_tbl <- data.frame('HR'=hr,
-                       '95% CI'=hr_confint, check.names = F)
+    
+    hr_tbl <- data.frame('HR'=hr,
+                         '95% CI'=hr_confint, check.names = F) %>%
+      tibble::rownames_to_column(., "Group")
+    return(hr_tbl)
+  }
   
+  cfu$grp <- factor(as.character(cfu$grp))
+  hr_tbl <- .getHrTbl(cfu) 
+  cfu$grp <- factor(as.character(cfu$grp), levels=rev(levels(cfu$grp)))
+  hr_tbl <- purrr::reduce(list(hr_tbl, .getHrTbl(cfu)), .f=full_join, by=colnames(hr_tbl))
+
   
   # grps <- c('2>1', '1>2')
   # grps <- c("FALSE", "TRUE")
@@ -459,14 +469,25 @@ ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T){
   # 
   # dev.off()
   
-  time_br <- ceiling(max(cfu$time)/10)
+  hr_tbl <- summary(fit)$table %>% 
+    as.data.frame %>%
+    tibble::rownames_to_column(., "Group") %>% 
+    mutate(Group = gsub("=", "", Group)) %>%
+    dplyr::select(median, Group) %>%
+    magrittr::set_colnames(., c("Median_Survival", "Group")) %>%
+    left_join(hr_tbl, ., by='Group')
+  
+  cnt <- c(50, 100, 500, 1000)
+  time_br <- sapply(cnt, function(i) ceiling(max(cfu$time)/i))
+  time_br <- cnt[min(which(time_br <= 20))]
   ggsurv <- ggsurvplot(
     fit, data = cfu,
     conf.int = FALSE, pval = TRUE,
     risk.table = TRUE, risk.table.col = "strata",
     risk.table.height = 0.25, 
     ncensor.plot = TRUE, ncensor.plot.height = 0.15,
-    break.time.by = if(time_br > 50) 100 else time_br, 
+    break.time.by = time_br, 
+    surv.median.line = "hv", 
     ggtheme = theme_bw()
   )
   ggtbl <- ggplot(data.frame(0)) + 
