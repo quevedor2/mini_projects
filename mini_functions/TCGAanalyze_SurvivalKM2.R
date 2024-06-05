@@ -287,14 +287,14 @@ TCGAanalyze_SurvivalKM3 <- function (clinical_patient, data_grp,
 
 XenaTCGAanalyze_SurvivalKM <- function (clinical_patient, data_grp,
                                         Survresult = FALSE, metric="OS", 
-                                        add.pvaltbl=F, ret.pvaltbl=T, ...) {
+                                        add.pvaltbl=F, ret.pvaltbl=T, skipvalidation=F, ...) {
   require(plotrix)
   TCGAbiolinks:::check_package("survival")
   all_samples <- as.character(unlist(data_grp))
   
   ## Pre-format the survival data
   message(paste0("Analyzing: ", metric))
-  stopifnot(.validateXenaSurvival(clinical_patient))
+  if(!skipvalidation) stopifnot(.validateXenaSurvival(clinical_patient))
   clinical_patient[is.na(clinical_patient)] <- 0
   cfu <- clinical_patient %>%
     dplyr::select(sample, !!rlang::sym(metric), !!rlang::sym(paste0(metric, ".time"))) %>%
@@ -366,7 +366,7 @@ XenaTCGAanalyze_SurvivalKM <- function (clinical_patient, data_grp,
   # do the plotty plotties
   if (Survresult == TRUE) {
     # plotSurvival(cfu_split, pval_mat, sc_stats, ...)
-    tabSurv_c <- ggPlotSurvival(cfu=cfu_complete, mytable=pval_mat, 
+    tabSurv_c <- ggPlotSurvival(cfu=cfu_complete, mytable=as.data.frame(pval_mat), 
                                 add.pvaltbl=add.pvaltbl, ...)
     if(ret.pvaltbl) tabSurv_c <- list("cfu"=cfu_complete, "tab"=tabSurv_c, "pval"=pval_mat)
   } else {
@@ -477,9 +477,10 @@ ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T){
     magrittr::set_colnames(., c("Median_Survival", "Group")) %>%
     left_join(hr_tbl, ., by='Group')
   
-  cnt <- c(50, 100, 500, 1000)
+  cnt <- c(seq(1, 10, by=2), 50, 100, 500, 1000)
   time_br <- sapply(cnt, function(i) ceiling(max(cfu$time)/i))
-  time_br <- cnt[min(which(time_br <= 20))]
+  time_br <- cnt[which.min(20-time_br)]
+  # time_br <- cnt[min(which(time_br <= 20))]
   ggsurv <- ggsurvplot(
     fit, data = cfu,
     conf.int = FALSE, pval = TRUE,
