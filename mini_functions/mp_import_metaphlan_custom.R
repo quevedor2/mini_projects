@@ -102,6 +102,7 @@ mp_import_metaphlan_custom <- function (profile, mapfilename = NULL,
   
   featureIndex <- intersect(rownames(assay), rownames(taxatab))
   taxatab %<>% 
+    dplyr::mutate(OTU=make.unique(OTU)) %>% 
     magrittr::extract(featureIndex, ) %>% 
     magrittr::set_rownames(NULL) %>% 
     tibble::column_to_rownames(var = "OTU")
