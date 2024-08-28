@@ -6,7 +6,8 @@
 # in the MicrobiotaProcess package
 mp_import_metaphlan_custom <- function (profile, mapfilename = NULL,
                                         treefile = NULL, linenum = NULL, 
-                                        taxa_code=NULL,...) {
+                                        taxa_code=NULL, dfilter=NULL, 
+                                        max_sep=NULL, ...) {
   skipnrow <- MicrobiotaProcess:::guess_skip_nrow(profile)
   if (!is.null(linenum)) {
     sampleda <- utils::read.table(profile, sep = "\t", skip = skipnrow, 
@@ -29,6 +30,18 @@ mp_import_metaphlan_custom <- function (profile, mapfilename = NULL,
     sampleda <- NULL
   }
   
+  if(!is.null(dfilter)){
+    all_domains <- gsub("\\|.*", "", da[,1])
+    valid_domains <- names(which(table(all_domains) > 2))
+    if(!any(grepl(dfilter, valid_domains, ignore.case = T))){
+      warning(paste0("dfilter had no compatible domains.\n", 
+                     "\tInput: ", dfilter, "\n",
+                     "\tDomains: ", paste(valid_domains, collapse=",")))
+      return(NULL)
+    } else {
+      da <- da[which(grepl(dfilter, all_domains, ignore.case=T)),]
+    }
+  }
   
   if (is.null(linenum) && !is.null(mapfilename)) {
     if (inherits(mapfilename, "character") && file.exists(mapfilename)) {
@@ -56,9 +69,24 @@ mp_import_metaphlan_custom <- function (profile, mapfilename = NULL,
   # }
   
   if(is.null(taxa_code)){
-    max.sep <- da %>% dplyr::pull(1) %>% 
+    sep.count <- da %>% dplyr::pull(1) %>% 
       gregexpr("\\|", .) %>% 
-      lapply(length) %>% unlist %>% max
+      lapply(length) %>% unlist
+    max.sep <- max(sep.count)
+    
+    if(!is.null(max_sep)){
+      if(max_sep > max.sep) {
+        warning(paste0("\tmax_sep is larger than the maximum: ", max.sep, "\n",
+                       "\tthe default max.sep will be used instead"))
+      } else {
+        sep.df <- strsplit(da[which(max.sep == sep.count),1], split="\\|") %>% 
+          do.call(rbind, .)
+        sel_taxa_code <- unique(gsub("__.*", "__", sep.df[,max_sep+1]))
+        warning(paste0("\tSelecting a max_sep (", max_sep, ") = ", sel_taxa_code, "\n"))
+        max.sep <- max_sep
+      }
+    }
+    
     
     dat <- da %>% 
       dplyr::filter(!!as.symbol(clnm[1]) %>% 
@@ -123,3 +151,17 @@ mp_import_metaphlan_custom <- function (profile, mapfilename = NULL,
   mpse <- MicrobiotaProcess:::.build_mpse(res)
   return(mpse)
 }
+
+# idx1 <- da[,1] %>% gregexpr("\\|", .) %>% sapply(length) %>% magrittr::equals(max.sep)
+# idx2 <- da[,1] %>% gregexpr("s__", .) %>% sapply(., function(i) i!=-1)
+# setdiff(which(idx1), which(idx2))
+# da[,1][setdiff(which(idx2), which(idx1))]
+# da[,1][intersect(which(idx2), which(idx1))]
+# 
+# idx1 & !idx2)
+# %>% 
+#   dplyr::filter(!!as.symbol(clnm[1]) %>% 
+#                   gregexpr("\\|", .) %>% 
+#                   lapply(length) %>% 
+#                   unlist %>% 
+#                   magrittr::equals(max.sep))
