@@ -502,16 +502,17 @@ ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T, xticks=20){
                       xmin=1, xmax=8, ymin=0, ymax=10) +
     ggmap::theme_nothing() 
   ggsurv_grid <- cowplot::plot_grid(ggsurv$plot + ggtitle(caption), 
+                                    ggtbl,
                            ggsurv$table + theme(legend.position='none'), 
                            ggsurv$ncensor.plot + theme(legend.position='none'),
-                           nrow=3, rel_heights = c(3,2,1))
+                           nrow=4, rel_heights = c(3,1,2,1))
   
-  if(add.pvaltbl){
-    cowplot::plot_grid(ggsurv_grid, ggtbl, ncol = 2, rel_widths = c(3,1))
-  } else {
-    cowplot::plot_grid(ggsurv_grid, hr_ggtb, ncol = 2, rel_widths = c(3,1))
-  }
-  
+  # if(add.pvaltbl){
+  #   cowplot::plot_grid(ggsurv_grid, ggtbl, ncol = 2, rel_widths = c(3,1))
+  # } else {
+  #   cowplot::plot_grid(ggsurv_grid, hr_ggtb, ncol = 2, rel_widths = c(3,1))
+  # }
+  ggsurv_grid
 }
 
 plotSurvival <- function(cfu_split, pval_mat, sc_stats, 
