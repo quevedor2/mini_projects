@@ -502,7 +502,7 @@ ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T, xticks=20){
                       xmin=1, xmax=8, ymin=0, ymax=10) +
     ggmap::theme_nothing() 
   ggsurv_grid <- cowplot::plot_grid(ggsurv$plot + ggtitle(caption), 
-                                    ggtbl,
+                                    cowplot::plot_grid(ggtbl, hr_ggtb, ncol=2),
                            ggsurv$table + theme(legend.position='none'), 
                            ggsurv$ncensor.plot + theme(legend.position='none'),
                            nrow=4, rel_heights = c(3,1,2,1))
