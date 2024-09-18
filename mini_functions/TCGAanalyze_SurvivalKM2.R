@@ -285,6 +285,16 @@ TCGAanalyze_SurvivalKM3 <- function (clinical_patient, data_grp,
 }
 
 
+
+clinical_patient=survival
+data_grp=quant_spl
+Survresult = T
+metric=metric
+add.pvaltbl=F
+ret.pvaltbl=T
+caption=paste0("TCGA ", phenoid, " [", metric, "]: ", geneseti)
+xticks=7
+
 XenaTCGAanalyze_SurvivalKM <- function (clinical_patient, data_grp,
                                         Survresult = FALSE, metric="OS", 
                                         add.pvaltbl=F, ret.pvaltbl=T, skipvalidation=F, ...) {
@@ -320,6 +330,7 @@ XenaTCGAanalyze_SurvivalKM <- function (clinical_patient, data_grp,
     mutate(group=rep(names(data_grp), sapply(data_grp, length))) %>%
     dplyr::filter(!duplicated(samples),
                   samples %in% rownames(cfu_complete))
+  data$group <- factor(as.character(data$group), levels=names(data_grp))
   
   cfu_complete <- cfu_complete[match(data$samples,rownames(cfu_complete)),]
   cfu_complete$grp <- data$group
@@ -409,6 +420,8 @@ cntDead <- function(cfu_x){
 ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T){
   require(gridExtra)
   require(survminer)
+  # cfu$grp <- factor(as.character(cfu$grp))
+  # cfu$grp <- factor(as.character(cfu$grp), levels=rev(levels(cfu$grp)))
   fit <- survfit(Surv(time, status) ~ grp, data = cfu)
   
   # Get HR
@@ -423,10 +436,7 @@ ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T){
       tibble::rownames_to_column(., "Group")
     return(hr_tbl)
   }
-  
-  cfu$grp <- factor(as.character(cfu$grp))
   hr_tbl <- .getHrTbl(cfu) 
-  cfu$grp <- factor(as.character(cfu$grp), levels=rev(levels(cfu$grp)))
   hr_tbl <- purrr::reduce(list(hr_tbl, .getHrTbl(cfu)), .f=full_join, by=colnames(hr_tbl))
 
   
@@ -477,10 +487,11 @@ ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T){
     magrittr::set_colnames(., c("Median_Survival", "Group")) %>%
     left_join(hr_tbl, ., by='Group')
   
-  cnt <- c(seq(1, 10, by=2), 50, 100, 500, 1000)
+  cnt <- c(seq(1, 10, by=2), 50, 100, 500, 1000, 2000)
   time_br <- sapply(cnt, function(i) ceiling(max(cfu$time)/i))
-  time_br <- cnt[which.min(20-time_br)]
+  time_br <- cnt[which.min(abs(20-time_br))]
   # time_br <- cnt[min(which(time_br <= 20))]
+  cfu$grp <-  factor(as.character(cfu$grp), levels=rev(levels(cfu$grp)))
   ggsurv <- ggsurvplot(
     fit, data = cfu,
     conf.int = FALSE, pval = TRUE,
