@@ -284,17 +284,6 @@ TCGAanalyze_SurvivalKM3 <- function (clinical_patient, data_grp,
   return(status)
 }
 
-
-
-clinical_patient=survival
-data_grp=quant_spl
-Survresult = T
-metric=metric
-add.pvaltbl=F
-ret.pvaltbl=T
-caption=paste0("TCGA ", phenoid, " [", metric, "]: ", geneseti)
-xticks=7
-
 XenaTCGAanalyze_SurvivalKM <- function (clinical_patient, data_grp,
                                         Survresult = FALSE, metric="OS", 
                                         add.pvaltbl=F, ret.pvaltbl=T, skipvalidation=F, ...) {
@@ -417,7 +406,7 @@ cntDead <- function(cfu_x){
   deads_x
 }
 
-ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T){
+ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T, xticks=20){
   require(gridExtra)
   require(survminer)
   # cfu$grp <- factor(as.character(cfu$grp))
@@ -489,7 +478,7 @@ ggPlotSurvival <- function(cfu, mytable, caption='', add.pvaltbl=T){
   
   cnt <- c(seq(1, 10, by=2), 50, 100, 500, 1000, 2000)
   time_br <- sapply(cnt, function(i) ceiling(max(cfu$time)/i))
-  time_br <- cnt[which.min(abs(20-time_br))]
+  time_br <- cnt[which.min(abs(xticks-time_br))]
   # time_br <- cnt[min(which(time_br <= 20))]
   cfu$grp <-  factor(as.character(cfu$grp), levels=rev(levels(cfu$grp)))
   ggsurv <- ggsurvplot(
