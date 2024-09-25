@@ -1,4 +1,4 @@
-mp_plot_diff_boxplot_custom <- function(.data, .group, .size = 2, .taxas=NULL,
+mp_plot_diff_barplot_custom <- function(.data, .group, .size = 2, .taxas=NULL,
                                            errorbar.xmin = NULL, 
                                            errorbar.xmax = NULL,
                                            point.x = NULL, 
