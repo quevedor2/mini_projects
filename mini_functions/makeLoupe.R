@@ -41,17 +41,30 @@
   # the file will be outputed as: /path/to/output_directory/demo.cloupe
 }
 
+# mat=assay(counts)
+# meta=metad2
+# projections=list("gene"=pca_x,"ssgsea"=pca_pathway)
+# output_dir=file.path(pdir, "manual", "loupe")
+# output_name="pca_all"
+# barcodes_f=barcodes_f
+
 makeLoupe <- function(mat, meta, projections,
                       output_dir, output_name,
-                      barcodes_f="~/mcgahalab/ref/scrna/barcodes.tsv"){
+                      barcodes_f="~/mcgahalab/ref/scrna/barcodes.tsv",
+                      tmpdir=NULL){
   mat_l <- .formatMat(mat, barcodes_f)
   mat <- mat_l$mat
   meta <- .formatMeta(meta, mat, barcodemapping=mat_l$barcodemapping)
   projections <- .formatProjections(projections, mat, barcodemapping=mat_l$barcodemapping)
   
+  if(any(rownames(mat) == '')){
+    warning("One of your genes had no name: '' ")
+    mat <- mat[-which(rownames(mat) == ''),]
+  }
   loupeR:::create_loupe(count_mat=mat, clusters = meta, projections = projections, 
                         output_dir = output_dir, output_name = output_name, 
-                        executable_path = NULL, force = T, seurat_obj_version = NULL)
+                        executable_path = NULL, force = T, seurat_obj_version = NULL,
+                        tmpdir=tmpdir)
   print(paste0("Output to: ", 
                file.path(output_dir, paste0(output_name, ".cloupe"))))
   return(file.path(output_dir, paste0(output_name, ".cloupe")))
