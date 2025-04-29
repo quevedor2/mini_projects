@@ -1,11 +1,11 @@
-profile=profile.norm
-mapfilename=metaf
-taxa_code=NULL
+# profile=profile
+# mapfilename='meta.tmp'#metaf
+# taxa_code=NULL
 # dfilter='bacteria'
-dfilter=NULL
-max_sep=max_sep
-treefile = NULL
-linenum = NULL
+# # dfilter=NULL
+# max_sep=max_sep
+# treefile = NULL
+# linenum = NULL
 
 ## Added the option to use a "taxa_code" such as "f__"
 # This will extract all families prefixed with f__ and not include
