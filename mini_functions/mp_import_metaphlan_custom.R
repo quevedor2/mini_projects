@@ -1,3 +1,12 @@
+profile=profile.norm
+mapfilename=metaf
+taxa_code=NULL
+# dfilter='bacteria'
+dfilter=NULL
+max_sep=max_sep
+treefile = NULL
+linenum = NULL
+
 ## Added the option to use a "taxa_code" such as "f__"
 # This will extract all families prefixed with f__ and not include
 # anything downstream that also has f__ in its classification (such as
@@ -87,7 +96,6 @@ mp_import_metaphlan_custom <- function (profile, mapfilename = NULL,
       }
     }
     
-    
     dat <- da %>% 
       dplyr::filter(!!as.symbol(clnm[1]) %>% 
                       gregexpr("\\|", .) %>% 
@@ -102,6 +110,9 @@ mp_import_metaphlan_custom <- function (profile, mapfilename = NULL,
       magrittr::set_colnames(c(MicrobiotaProcess:::taxaclass[seq_len(max.sep)], "OTU")) %>% 
       MicrobiotaProcess:::fillNAtax()
     
+    
+    # strsplit(dat$Gene_Family, split = "\\|")[c(3742:3748)] %>% 
+    #   lapply(function(x) x %>% magrittr::extract2(max.sep + 1))
     assay <- dat %>% 
       dplyr::mutate(`:=`(!!as.symbol(clnm[1]), 
                          strsplit(!!as.symbol(clnm[1]), split = "\\|") %>% 

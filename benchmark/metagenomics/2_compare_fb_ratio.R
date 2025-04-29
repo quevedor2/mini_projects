@@ -1,11 +1,11 @@
 library(tidyverse)
-analysis <- 'teresa' # 'benchmark'
+analysis <- 'benchmark' # 'benchmark' 'teresa', 'home'
 if(analysis  == 'teresa'){
   pdir <- '/cluster/projects/mcgahalab/data/mcgahalab/teresa_metagenomics/shotgun/results'
   dir <- file.path(pdir, '/kraken/bracken/phylum')
   dir3 <- file.path(pdir, '/metaphlan/main')
   dir4 <- file.path(pdir, '/metaphlan4/main')
-} else {
+} else if(analysis=='benchmark') {
   pdir <- '/cluster/projects/mcgahalab/data/mcgahalab/benchmark/metagenomics/results'
   dir <- file.path(pdir, '/kraken/bracken/phylum')
   dir3 <- file.path(pdir, '/metaphlan/main')

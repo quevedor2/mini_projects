@@ -43,8 +43,9 @@ runMonocle3 <- function(dat, nodes_l=NULL, reduction='umap', ncenter=275, condit
     cds <- new_cell_data_set(expression_data=data,
                              cell_metadata  = seu@meta.data,
                              gene_metadata = fData) %>%
-      estimate_size_factors(.) %>%
-      preprocess_cds(., num_dim = 50, norm_method='log') %>%
+      estimate_size_factors(.)
+    cds <- cds %>%
+      preprocess_cds(., num_dim = 30, norm_method='log') %>%
       align_cds(., alignment_group = comp_group)
     reducedDims(cds)$UMAP <- Embeddings(seu, reduction)
     cds <- cds %>% 
@@ -269,7 +270,7 @@ plotProgressionAndCelltype <- function(cds, pseudoval=0.01){
   return(break_prop)
 }
 
-tradeseq.predictSmooth_conditions <- function(models, gene, pseudotime_breaks, tidy){
+tradeseq.predictSmooth_conditions <- function(models, gene, pseudotime_breaks=NULL, tidy=FALSE){
   ## Class-level preprocessing
   # models = gams[[compid]][[partitionid]]
   id = gene
@@ -284,7 +285,7 @@ tradeseq.predictSmooth_conditions <- function(models, gene, pseudotime_breaks, t
   
   nCurves <- length(grep(x = colnames(dm), pattern = "t[1-9]"))
   nConditions <- nlevels(conditions)
-  nPoints <- nrow(pseudotime_breaks)
+  nPoints <- if(is.null(pseudotime_breaks)) 100 else nrow(pseudotime_breaks)
   
   # get predictor matrix
   if (tidy) out <- list()
@@ -293,7 +294,7 @@ tradeseq.predictSmooth_conditions <- function(models, gene, pseudotime_breaks, t
     for(kk in seq_len(nConditions)){
       df <- tradeSeq:::.getPredictRangeDf(dm, lineageId = jj, conditionId = kk,
                                           nPoints = nPoints)
-      df$t1 <- pseudotime_breaks$pseudotime
+      if(!is.null(pseudotime_breaks)) df$t1 <- pseudotime_breaks$pseudotime
       
       
       Xdf <- tradeSeq:::predictGAM(lpmatrix = X,
@@ -321,9 +322,10 @@ tradeseq.predictSmooth_conditions <- function(models, gene, pseudotime_breaks, t
                       levels(conditions)[rep(1:nConditions, nCurves)])
   colnames(yhatMat) <- c(sapply(baseNames, paste0, "_point",1:nPoints))
   for (jj in 1:length(gene)) {
-    yhat <- c(exp(t(Xall %*% t(beta[as.character(gene[jj]), ,
-                                    drop = FALSE])) +
+    yhat <- tryCatch({
+      c(exp(t(Xall %*% t(beta[as.character(gene[jj]), ,drop = FALSE])) +
                     df$offset[1]))
+    }, error=function(e){NA})
     yhatMat[jj, ] <- yhat
   }
   ## return output

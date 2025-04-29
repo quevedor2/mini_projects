@@ -92,7 +92,7 @@ makeLoupe <- function(mat, meta, projections,
   ## Mapping matrix and barcodes
   mat <- as(round(mat_prelim* 100, 1), 'dgCMatrix')
   barcodes <- read.table(barcodes_f, header=T)
-  random_barcodes <- sample(barcodes$x, ncol(mat))
+  random_barcodes <- sample(barcodes$x, ncol(mat), replace = T)
   barcodemapping <- setNames(
     paste(random_barcodes, colnames(mat), sep="-"),
     colnames(mat)

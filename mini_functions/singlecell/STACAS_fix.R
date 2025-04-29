@@ -92,6 +92,9 @@ make.reference <- function (ref, assay = NULL, atlas.name = "custom_reference",
       stop(sprintf("Dimred %s not found in reference object. Select a different dimensionality reduction, or set recalculate.umap=TRUE to compute UMAP coordinates", 
                    dimred))
     }
+    ref.umap <- ProjecTILs:::run.umap.2(ref.pca, ndim = ndim, seed = seed, 
+                           n.neighbors = n_neighbors, min.dist = min_dist, 
+                           metric = metric)
   } else {
     umap.method = umap.method[1]
     ref.pca <- ref@misc$pca_object
