@@ -1,8 +1,10 @@
 mp_plot_diff_barplot_custom <- function(.data, .group, .size = 2, .taxas=NULL,
-                                           errorbar.xmin = NULL, 
-                                           errorbar.xmax = NULL,
-                                           point.x = NULL, 
-                                           taxa.class = 'all', group.abun = FALSE, removeUnknown=FALSE, ...){
+                                        errorbar.xmin = NULL, 
+                                        errorbar.xmax = NULL,
+                                        point.x = NULL, 
+                                        taxa.class = 'all', group.abun = FALSE, 
+                                        plotgrid=TRUE,
+                                        removeUnknown=FALSE, ...){
   taxa.class <- rlang::enquo(taxa.class)
   .group <- rlang::enquo(.group)
   .size <- rlang::enquo(.size)
@@ -71,7 +73,8 @@ mp_plot_diff_barplot_custom <- function(.data, .group, .size = 2, .taxas=NULL,
     }
   }
   tbl %<>% dplyr::filter(!is.na(!!rlang::sym(sign.group)))
-  tbl %>% dplyr::filter(!is.na(Sign_Classification))
+  plot.p2 <- TRUE
+  # tbl %>% dplyr::filter(!is.na(Sign_Classification))
   if (any(grepl('LDA', nmda)) && rlang::quo_is_null(errorbar.xmin) && 
       rlang::quo_is_null(errorbar.xmax) && rlang::quo_is_null(point.x)){
     xlabtext <- bquote(paste(Log[10],"(",.("LDA"), ")"))
@@ -91,6 +94,13 @@ mp_plot_diff_barplot_custom <- function(.data, .group, .size = 2, .taxas=NULL,
     xmaxtext <- gsub("^\"|\"$", "", rlang::as_label(errorbar.xmax))
     
   }else if (!rlang::quo_is_null(point.x) && any(rlang::quo_is_null(errorbar.xmin) || rlang::quo_is_null(errorbar.xmax))){
+    xlabtext <- gsub("^\"|\"$", "", rlang::as_label(point.x))
+    xtext <- xlabtext
+    xmintext <- NULL
+    xmaxtext <- NULL
+  } else {
+    warning("LDA or MDA has not been run; will be foregoing p2")
+    plot.p2 <- FALSE
     xlabtext <- gsub("^\"|\"$", "", rlang::as_label(point.x))
     xtext <- xlabtext
     xmintext <- NULL
@@ -224,6 +234,15 @@ mp_plot_diff_barplot_custom <- function(.data, .group, .size = 2, .taxas=NULL,
   p2 <- p2 + scale_color_manual(values=fix.group.color)
   
   # p <- p1 %>% aplot::insert_right(p2, width = .8)
-  p <- cowplot::plot_grid(p1, p2, nrow=1)
+  if(plotgrid){
+    if(plot.p2){
+      p <- cowplot::plot_grid(p1, p2, nrow=1)
+    } else {
+      p <- p1
+    }
+  } else {
+    p <- list(p1, p2)
+  }
+  
   return(p)
 }
