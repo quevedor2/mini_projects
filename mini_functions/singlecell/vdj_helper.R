@@ -207,11 +207,11 @@ appendImmdataMeta <- function(seu, immdat, aggfile, samplecol='batch'){
   p6 <- immunarch::vis(res$exp_vol, .by = .by, .meta = .meta)
   
   p7 <- immunarch::vis(res$imm_top)
-  p7b <- immunarch::vis(imm_top, .by = .by, .meta = .meta)
+  p7b <- immunarch::vis(res$imm_top, .by = .by, .meta = .meta)
   p8 <- immunarch::vis(res$imm_rare) 
-  p8b <- immunarch::vis(imm_rare, .by = .by, .meta = .meta)
+  p8b <- immunarch::vis(res$imm_rare, .by = .by, .meta = .meta)
   p9 <- immunarch::vis(res$imm_hom) 
-  p9b <- immunarch::vis(imm_hom, .by = .by, .meta = .meta)
+  p9b <- immunarch::vis(res$imm_hom, .by = .by, .meta = .meta)
   
   pdf(outf, width=width)
   if(is.null(.meta)){
