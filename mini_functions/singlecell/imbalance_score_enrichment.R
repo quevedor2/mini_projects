@@ -21,10 +21,16 @@ imbalance_score_enrichment <- function(rd, conditions, k = 10, smooth = k){
   scores <- unlist(scores)
   names(scores) <- rownames(rd)
   formula <- paste0("scores ~ s(", 
-                    paste0("rd[, ", seq_len(ncol(rd)), 
+                    paste0("rd[, ", seq_len(min(c(4, ncol(rd)))), 
                            "], ", collapse = ""), "k = smooth)")
-  mm <- mgcv::gam(stats::as.formula(formula))
-  scaled_scores <- mgcv::predict.gam(mm, type = "response")
+  scaled_scores <- tryCatch({
+    mm <- mgcv::gam(stats::as.formula(formula))
+    mgcv::predict.gam(mm, type = "response")
+  }, error=function(e){
+    warning("scaling failed")
+    scores
+  })
+  
   return(list(scores = scores, scaled_scores = scaled_scores))
 }
 
