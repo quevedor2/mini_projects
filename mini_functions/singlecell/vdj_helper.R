@@ -1,4 +1,13 @@
 
+# Idents(seu) <- 'batch'
+# seu148 <- subset(seu, ident='L148T_gdT')
+# seu148@meta.data <- seu148@meta.data[,c(1:10)]
+# barcode <- immdataToBarcode(immdata_10x$data$filtered_contig_annotations, colprefix='VDJTGD')$immdat
+# seul <- appendImmdataMeta(seu148, barcode, file.path(vdjtgd_dir, "aggregation.csv"))
+# immdata_10x_data <- immdata_10x$data$filtered_contig_annotations
+
+
+
 #' immdataToBarcode
 #' @author Rene Q
 #' @description Takes in the input from immunarch::repLoad()
@@ -23,6 +32,7 @@ immdataToBarcode <- function(immdata_10x_data, rm_dup=TRUE, colprefix=''){
     ))
   })
   immdata_data <- as.data.frame(do.call(rbind, immdata_data))
+  table(gsub("^.*-", "", immdata_data$Barcode))
   dup_immdata_data <- NULL
   if(rm_dup & any(duplicated(immdata_data$Barcode))){
     ## Some duplicate entries exist because one barcode has a raw_clonotype_id, while
@@ -73,6 +83,21 @@ appendImmdataMeta <- function(seu, immdat, aggfile, samplecol='batch'){
   samples <- immdat %>% 
     dplyr::pull(grep("Barcode", colnames(.), value=T)) %>% 
     gsub("^.*-", "-", .)
+  
+  validate_mapping = FALSE
+  if(validate_mapping){
+    ## Incomplete, need to finish validation
+    barcode_col <- grep("Barcode", colnames(immdat), value=T)
+    bcsplit <- split(gsub("-.*", "", immdat[,barcode_col]), f=gsub("^.*-", "", immdat[,barcode_col]))
+    cellssplit <- split(gsub("-.*", "", Cells(seu)), f=seu@meta.data[,samplecol])
+    props <- sapply(bcsplit, function(bc_i){
+      sapply(cellssplit, function(cells_j){
+        length(intersect(bc_i, cells_j)) / length(cells_j)
+      })
+    })
+    which.max(props)
+  }
+  
   immdat <- immdat %>% 
     dplyr::mutate(!!sym(samplecol) := aggdata[samples],
                   barcode=gsub("-.*", "", !!sym(grep("Barcode", colnames(.), value=T))))
