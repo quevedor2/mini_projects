@@ -71,26 +71,29 @@ makeLoupe <- function(mat, meta, projections,
 }
 
 .formatMat <- function(mat, barcodes_f){
-  ## Data validation
-  mat_prelim <- as.matrix(mat)
-  if(is.character(mat_prelim)){
-    stop("Please insert a numeric matrix with column and row-names")
+  ## Keep sparse: never call as.matrix() on a large matrix
+  if(!inherits(mat, "dgCMatrix")){
+    mat <- as(as(mat, "CsparseMatrix"), "dgCMatrix")
   }
-  storage.mode(mat_prelim) <- 'numeric'
+  if(!is.numeric(mat@x)) stop("Please insert a numeric matrix with column and row-names")
   
-  if(any(is.na(mat_prelim))){
+  ## Data validation on stored (non-zero) values only
+  if(anyNA(mat@x)){
     warning("NA values will be converted to 0")
-    mat_prelim[is.na(mat_prelim)] <- 0
+    mat@x[is.na(mat@x)] <- 0
   }
-  mat_range <- c(min(mat_prelim), max(mat_prelim))
+  mat_range <- c(min(mat@x, 0), max(mat@x, 0))   # include 0 for implicit zeros
   if(max(mat_range) < 1){
     warning("Max value in matrix is too low, must be >1")
   } else if(min(mat_range) < 0){
     stop("Min value in matrix is too low, must be >0")
   }
-
+  
+  ## Scale and round in place on the non-zeros, then drop any new zeros
+  mat@x <- round(mat@x * 100, 1)
+  mat <- Matrix::drop0(mat)
+  
   ## Mapping matrix and barcodes
-  mat <- as(round(mat_prelim* 100, 1), 'dgCMatrix')
   barcodes <- read.table(barcodes_f, header=T)
   random_barcodes <- sample(barcodes$x, ncol(mat), replace = T)
   barcodemapping <- setNames(
@@ -100,6 +103,36 @@ makeLoupe <- function(mat, meta, projections,
   colnames(mat) <- as.character(barcodemapping[colnames(mat)])
   return(list(mat=mat, barcodemapping=barcodemapping))
 }
+# .formatMat <- function(mat, barcodes_f){
+#   ## Data validation
+#   mat_prelim <- as.matrix(mat)
+#   if(is.character(mat_prelim)){
+#     stop("Please insert a numeric matrix with column and row-names")
+#   }
+#   storage.mode(mat_prelim) <- 'numeric'
+#   
+#   if(any(is.na(mat_prelim))){
+#     warning("NA values will be converted to 0")
+#     mat_prelim[is.na(mat_prelim)] <- 0
+#   }
+#   mat_range <- c(min(mat_prelim), max(mat_prelim))
+#   if(max(mat_range) < 1){
+#     warning("Max value in matrix is too low, must be >1")
+#   } else if(min(mat_range) < 0){
+#     stop("Min value in matrix is too low, must be >0")
+#   }
+# 
+#   ## Mapping matrix and barcodes
+#   mat <- as(round(mat_prelim* 100, 1), 'dgCMatrix')
+#   barcodes <- read.table(barcodes_f, header=T)
+#   random_barcodes <- sample(barcodes$x, ncol(mat), replace = T)
+#   barcodemapping <- setNames(
+#     paste(random_barcodes, colnames(mat), sep="-"),
+#     colnames(mat)
+#   )
+#   colnames(mat) <- as.character(barcodemapping[colnames(mat)])
+#   return(list(mat=mat, barcodemapping=barcodemapping))
+# }
 .formatProjections <- function(projections, mat, barcodemapping){
   if(class(projections) %in% c('matrix', 'data.frame')){
     warning("Converting projection data into a list")
